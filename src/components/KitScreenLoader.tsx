@@ -73,17 +73,6 @@ export function KitScreenLoader({
     return () => clearInterval(interval);
   }, [progress, isComplete, onComplete]);
 
-  // When page completes loading (isComplete -> true), smoothly fill to 100% and complete
-  useEffect(() => {
-    if (isComplete) {
-      setInternalProgress(100);
-      const timer = setTimeout(() => {
-        onComplete?.();
-      }, 260);
-      return () => clearTimeout(timer);
-    }
-  }, [isComplete, onComplete]);
-
   const currentProgress = typeof progress === 'number' ? progress : internalProgress;
 
   // Dimensions & typography scaling
@@ -173,7 +162,7 @@ export function KitScreenLoader({
           </span>
           {/* Subtitle */}
           <span className={`${currentSize.textSub} font-semibold text-slate-400 tracking-wider uppercase leading-none mt-1 select-none`}>
-            Kolhapur Institute of Technology
+            Kanpur Institute of Technology
           </span>
         </div>
       )}

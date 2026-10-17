@@ -14,20 +14,21 @@ import {
   ShieldCheck, 
   Award,
   ChevronDown,
-  UserCog
+  UserCog,
+  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { LogoutButton } from "@/components/LogoutButton";
 import { useLoading } from "@/components/PageLoadingProvider";
 import { KitScreenLoader } from "@/components/KitScreenLoader";
-import { getActiveSession, saveActiveSession } from "@/lib/auth";
+import { getActiveSession } from "@/lib/auth";
+import { EditProfileModal } from "@/components/dashboard/EditProfileModal";
 
-export type RoleType = "HOD" | "STUDENT" | "COORDINATOR";
+export type RoleType = "HOD" | "COORDINATOR";
 
 export const ROLE_LABELS: Record<RoleType, string> = {
   HOD: "HOD",
-  STUDENT: "Student",
   COORDINATOR: "Faculty"
 };
 
@@ -45,13 +46,6 @@ export const ROLE_PROFILES: Record<RoleType, { name: string; email: string; init
     initial: "AS",
     role: "Faculty (Project Coordinator)",
     dept: "Dept. of Computer Science"
-  },
-  STUDENT: {
-    name: "Aarav Sharma",
-    email: "student.lead@kit.ac.in",
-    initial: "AS",
-    role: "Student (Team Lead)",
-    dept: "B.Tech Final Year (CSE)"
   }
 };
 
@@ -64,8 +58,8 @@ const NavLink = ({
   setIsMobileMenuOpen 
 }: any) => {
   const pathname = usePathname();
-  const isActive = href === "/" || href === "/dashboard" 
-    ? (pathname === "/" || pathname === "/dashboard")
+  const isActive = (href === "/hod" || href === "/coordinator" || href === "/") 
+    ? pathname === href
     : (pathname === href || (pathname ? pathname.startsWith(href + "/") : false));
 
   return (
@@ -107,14 +101,14 @@ export function DashboardLayoutClient({
   children: React.ReactNode;
   initialRole?: RoleType;
 }) {
-  const { isDashboardTabLoading, isNavComplete } = useLoading();
+  const { isDashboardTabLoading, isNavComplete, dismissNavLoader } = useLoading();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(256);
   const [isResizing, setIsResizing] = useState(false);
   const [currentRole, setCurrentRole] = useState<RoleType>(initialRole || "HOD");
-  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
   const [profileDetails, setProfileDetails] = useState({
     name: ROLE_PROFILES[initialRole || "HOD"].name,
@@ -124,28 +118,39 @@ export function DashboardLayoutClient({
   });
 
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const roleMenuRef = useRef<HTMLDivElement>(null);
+
+
 
   // Sync role from active session
   useEffect(() => {
-    const session = getActiveSession();
-    if (!session && !initialRole) {
-      if (typeof window !== "undefined" && window.location.pathname !== "/" && window.location.pathname !== "/login") {
-        window.location.href = "/";
+    const syncRole = () => {
+      const session = getActiveSession();
+      if (!session && !initialRole) {
+        if (typeof window !== "undefined" && window.location.pathname !== "/" && window.location.pathname !== "/login") {
+          window.location.href = "/";
+        }
+        return;
       }
-      return;
-    }
-    const roleToUse = initialRole || session?.role || "HOD";
-    setCurrentRole(roleToUse);
-    const prof = ROLE_PROFILES[roleToUse];
-    if (prof) {
-      setProfileDetails(prev => ({
-        ...prev,
-        name: session?.name || prof.name,
-        email: session?.email || prof.email,
-        role: prof.role
-      }));
-    }
+      const roleToUse = session?.role || initialRole || "HOD";
+      setCurrentRole(roleToUse);
+      const prof = ROLE_PROFILES[roleToUse];
+      if (prof) {
+        setProfileDetails(prev => ({
+          ...prev,
+          name: session?.name || prof.name,
+          email: session?.email || prof.email,
+          role: prof.role
+        }));
+      }
+    };
+
+    syncRole();
+    window.addEventListener("kit-auth-change", syncRole);
+    window.addEventListener("storage", syncRole);
+    return () => {
+      window.removeEventListener("kit-auth-change", syncRole);
+      window.removeEventListener("storage", syncRole);
+    };
   }, [initialRole]);
 
   // Resize handling matching udyam sandhi
@@ -196,18 +201,16 @@ export function DashboardLayoutClient({
       ) {
         setIsProfileMenuOpen(false);
       }
-      if (
-        roleMenuRef.current && 
-        !roleMenuRef.current.contains(event.target as Node)
-      ) {
-        setIsRoleDropdownOpen(false);
-      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  const dynamicInitial = profileDetails.name
+    ? profileDetails.name.split(" ").filter(Boolean).map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
+    : ROLE_PROFILES[currentRole].initial;
 
   return (
     <div className="h-screen flex bg-slate-50 overflow-hidden relative">
@@ -237,7 +240,7 @@ export function DashboardLayoutClient({
         {/* Top Header of Sidebar */}
         <div className={`h-16 md:h-20 flex items-center bg-[#F6F5F2] border-b border-slate-200 shrink-0 ${isSidebarOpen ? 'justify-between px-4 md:px-5 gap-3' : 'justify-center px-1.5 gap-1'}`}>
           <Logo 
-            href="/" 
+            href={currentRole === "HOD" ? "/hod" : "/coordinator"} 
             onClick={() => setIsMobileMenuOpen(false)} 
             collapsed={!isSidebarOpen} 
           />
@@ -301,69 +304,67 @@ export function DashboardLayoutClient({
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/" 
+                  href="/hod" 
                   icon={LayoutDashboard} 
                   label="dashboard" 
                 />
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/roles" 
+                  href="/hod/forms" 
+                  icon={FileCheck2} 
+                  label="forms" 
+                />
+                <NavLink 
+                  isSidebarOpen={isSidebarOpen} 
+                  setIsMobileMenuOpen={setIsMobileMenuOpen} 
+                  href="/hod/roles" 
                   icon={UserCog} 
                   label="manage roles" 
                 />
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/students" 
+                  href="/hod/students" 
                   icon={Users} 
                   label="students" 
                 />
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/projects" 
+                  href="/hod/projects" 
                   icon={FolderGit2} 
                   label="project dir" 
                 />
               </>
-            ) : currentRole === "STUDENT" ? (
-              <>
-                <NavLink 
-                  isSidebarOpen={isSidebarOpen} 
-                  setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/" 
-                  icon={LayoutDashboard} 
-                  label="Dashboard" 
-                />
-                <NavLink 
-                  isSidebarOpen={isSidebarOpen} 
-                  setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/projects" 
-                  icon={FolderGit2} 
-                  label="project dir" 
-                />
-              </>
+
             ) : (
               <>
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/" 
+                  href="/coordinator" 
                   icon={LayoutDashboard} 
                   label="Dashboard" 
                 />
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/students" 
+                  href="/coordinator/forms" 
+                  icon={FileCheck2} 
+                  label="forms" 
+                />
+                <NavLink 
+                  isSidebarOpen={isSidebarOpen} 
+                  setIsMobileMenuOpen={setIsMobileMenuOpen} 
+                  href="/coordinator/students" 
                   icon={Users} 
                   label="students" 
                 />
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/projects" 
+                  href="/coordinator/projects" 
                   icon={FolderGit2} 
                   label="project dir" 
                 />
@@ -381,7 +382,7 @@ export function DashboardLayoutClient({
             {isSidebarOpen ? (
               <div className="flex items-center space-x-3 w-full min-w-0">
                 <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center font-bold text-[#0D3481] shrink-0 shadow-sm border border-blue-200">
-                  {ROLE_PROFILES[currentRole].initial}
+                  {dynamicInitial}
                 </div>
                 <div className="overflow-hidden min-w-0 flex-1 group relative">
                   <div className="text-sm font-bold text-[#10334A] truncate" title={profileDetails.name}>
@@ -395,7 +396,7 @@ export function DashboardLayoutClient({
             ) : (
               <div className="group relative flex items-center justify-center cursor-pointer">
                 <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center font-bold text-[#0D3481] shadow-sm border border-blue-200">
-                  {ROLE_PROFILES[currentRole].initial}
+                  {dynamicInitial}
                 </div>
                 <div className="absolute left-full ml-4 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-zinc-900 text-white text-sm font-medium px-3 py-1.5 rounded-full whitespace-nowrap shadow-md z-50">
                   {profileDetails.name}
@@ -404,15 +405,16 @@ export function DashboardLayoutClient({
             )}
           </div>
 
-          {/* Profile Dropdown Menu - Logout Only */}
+          {/* Profile Dropdown Menu */}
           {isProfileMenuOpen && (
-            <div className="absolute bottom-full left-4 mb-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="absolute bottom-full left-4 mb-2 w-60 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
               <div className="px-4 py-2 border-b border-slate-100 mb-1">
                 <p className="text-sm font-bold text-[#10334A] truncate">{profileDetails.name}</p>
                 <p className="text-xs text-slate-500 truncate">{profileDetails.role}</p>
               </div>
+
               <div onClick={() => setIsProfileMenuOpen(false)}>
-                <LogoutButton className="w-full flex items-center px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer" />
+                <LogoutButton className="w-full flex items-center px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer" />
               </div>
             </div>
           )}
@@ -430,69 +432,22 @@ export function DashboardLayoutClient({
             >
               <Menu size={20} />
             </button>
-            
-
           </div>
 
-          {/* Role Switcher */}
-          <div className="flex items-center gap-3">
-            <div className="relative" ref={roleMenuRef}>
-              <button
-                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-[#10334A] shadow-xs transition-colors cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4 text-[#0D3481]" />
-                <span>Role: <strong className="text-[#0D3481]">{ROLE_LABELS[currentRole]}</strong></span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-              </button>
-
-              {isRoleDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200/80 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-                  <div className="px-3 py-1.5 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    Switch Active Role
-                  </div>
-                  {(Object.keys(ROLE_LABELS) as RoleType[]).map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => {
-                        setCurrentRole(role);
-                        const prof = ROLE_PROFILES[role];
-                        setProfileDetails(prev => ({
-                          ...prev,
-                          name: prof.name,
-                          email: prof.email,
-                          role: prof.role
-                        }));
-                        saveActiveSession({
-                          role,
-                          email: prof.email,
-                          name: prof.name,
-                          dept: prof.dept
-                        });
-                        setIsRoleDropdownOpen(false);
-                      }}
-                      className={`w-full text-left px-3.5 py-2 text-xs font-semibold flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                        currentRole === role ? "text-[#0D3481] bg-blue-50/50 font-bold" : "text-slate-700"
-                      }`}
-                    >
-                      <span>{ROLE_LABELS[role]}</span>
-                      {currentRole === role && <span className="w-1.5 h-1.5 rounded-full bg-[#0D3481]"></span>}
-                    </button>
-                  ))}
-                </div>
-              )}
+          <div className="flex items-center gap-2.5">
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-extrabold shadow-2xs border ${
+              currentRole === "HOD"
+                ? "bg-blue-50 text-[#0D3481] border-blue-200"
+                : "bg-emerald-50 text-emerald-800 border-emerald-200"
+            }`}>
+              <span className="text-xs">{currentRole === "HOD" ? "🎓" : "👩‍💼"}</span>
+              <span>{ROLE_LABELS[currentRole]}</span>
             </div>
 
-            <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
-
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#0D3481] text-white font-bold flex items-center justify-center text-sm shadow-xs">
-                {ROLE_PROFILES[currentRole].initial}
-              </div>
-              <div className="hidden sm:flex flex-col text-left">
-                <span className="text-xs font-bold text-[#10334A] leading-tight">{profileDetails.name}</span>
-                <span className="text-[11px] text-slate-500 leading-tight">{ROLE_PROFILES[currentRole].dept}</span>
-              </div>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#F6F5F2] text-[#0D3481] border border-slate-200/90 shadow-2xs">
+              <ShieldCheck className="w-4 h-4 text-[#0D3481] shrink-0" />
+              <span className="hidden sm:inline">Department of Computer Science & Engineering</span>
+              <span className="sm:hidden">Dept. of CSE</span>
             </div>
           </div>
         </header>
@@ -506,16 +461,33 @@ export function DashboardLayoutClient({
               <KitScreenLoader
                 fullScreen={false}
                 showText={false}
+                showProgressBar={true}
                 isComplete={isNavComplete}
+                onComplete={dismissNavLoader}
                 transparent={true}
               />
             </div>
           )}
-          <div className="max-w-7xl mx-auto w-full">
+          <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
             {children}
           </div>
         </main>
       </div>
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        isOpen={isEditProfileOpen}
+        onClose={() => setIsEditProfileOpen(false)}
+        role={currentRole}
+        onSave={(updated) => {
+          setProfileDetails(prev => ({
+            ...prev,
+            name: updated.name,
+            email: updated.email,
+            role: `Student (${updated.course} ${updated.stream} - ${updated.year} Year)`
+          }));
+        }}
+      />
     </div>
   );
 }

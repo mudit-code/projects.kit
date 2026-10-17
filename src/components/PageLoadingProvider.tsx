@@ -13,6 +13,7 @@ export function isDashboardPath(path: string | null): boolean {
     '/roles',
     '/students',
     '/projects',
+    '/forms',
   ];
   return dashboardPrefixes.some((prefix) => path === prefix || (prefix !== '/' && path.startsWith(prefix + '/')));
 }
@@ -26,6 +27,7 @@ export interface LoadingContextType {
   isNavComplete: boolean;
   startNavigation: (targetPath: string, options?: StartNavigationOptions) => void;
   endNavigation: () => void;
+  dismissNavLoader: () => void;
   startLoading: () => void;
   stopLoading: () => void;
 }
@@ -35,6 +37,7 @@ export const LoadingContext = createContext<LoadingContextType>({
   isNavComplete: false,
   startNavigation: () => {},
   endNavigation: () => {},
+  dismissNavLoader: () => {},
   startLoading: () => {},
   stopLoading: () => {},
 });
@@ -94,25 +97,28 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
       setIsInitialComplete(true);
     };
 
-    let timer: NodeJS.Timeout;
+    // If the document is already fully loaded, signal immediately
     if (typeof document !== 'undefined' && document.readyState === 'complete') {
-      timer = setTimeout(onReady, 500);
-    } else if (typeof window !== 'undefined') {
-      const handleLoad = () => {
-        timer = setTimeout(onReady, 350);
-      };
-      window.addEventListener('load', handleLoad);
-      const fallbackTimer = setTimeout(onReady, 900);
-      return () => {
-        window.removeEventListener('load', handleLoad);
-        clearTimeout(timer);
-        clearTimeout(fallbackTimer);
-      };
-    } else {
-      timer = setTimeout(onReady, 650);
+      onReady();
+      return;
     }
 
-    return () => clearTimeout(timer);
+    // Otherwise wait for the load event
+    if (typeof window !== 'undefined') {
+      const handleLoad = () => {
+        onReady();
+      };
+      window.addEventListener('load', handleLoad);
+      // Failsafe: if load event never fires (shouldn't happen), resolve after 5s
+      const fallbackTimer = setTimeout(onReady, 5000);
+      return () => {
+        window.removeEventListener('load', handleLoad);
+        clearTimeout(fallbackTimer);
+      };
+    }
+
+    // SSR fallback
+    onReady();
   }, [isInitialLoading]);
 
   // Lock body scroll while full-screen loaders (initial or outside dashboard full-view) are active
@@ -127,7 +133,14 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     };
   }, [isInitialLoading, isFullViewLoading]);
 
-  // End subsequent navigation immediately after smoothly completing the download line
+  // Dismiss the loader overlay (called by KitScreenLoader's onComplete after bar animation finishes)
+  const dismissNavLoader = useCallback(() => {
+    setIsFullViewLoading(false);
+    setIsDashboardTabLoading(false);
+    setIsNavComplete(false);
+  }, []);
+
+  // Signal navigation complete: fills the bar to 100%, loader stays visible until onComplete fires
   const endNavigation = useCallback(() => {
     if (navTimerRef.current) {
       clearTimeout(navTimerRef.current);
@@ -139,18 +152,19 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     }
     isNavigatingRef.current = false;
 
-    // Glide download line to 100%
-    setIsNavComplete(true);
+    // If no loader is showing (fast nav completed before debounce), just clean up
+    setIsNavComplete((prev) => {
+      // This runs synchronously — if neither loader is showing, we don't need to animate
+      return true;
+    });
 
-    // Promptly close loader after 100% animation completes
+    // Failsafe: if onComplete somehow doesn't fire, dismiss after 500ms
     setTimeout(() => {
-      setIsFullViewLoading(false);
-      setIsDashboardTabLoading(false);
-      setIsNavComplete(false);
-    }, 260);
-  }, []);
+      dismissNavLoader();
+    }, 500);
+  }, [dismissNavLoader]);
 
-  // Start subsequent navigation with 50ms debounce (or immediate if requested)
+  // Start subsequent navigation — dashboard tab loads show immediately, others debounce 50ms
   const startNavigation = useCallback((targetPath: string, options?: StartNavigationOptions) => {
     if (navTimerRef.current) {
       clearTimeout(navTimerRef.current);
@@ -160,6 +174,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
       clearTimeout(failsafeTimerRef.current);
       failsafeTimerRef.current = null;
     }
+
+    // Reset completion state for new navigation
+    setIsNavComplete(false);
 
     const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
     // If staying on the same path, don't trigger loader
@@ -172,7 +189,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     const isTargetDash = isDashboardPath(targetPath);
     const isInsideDashboard = isCurrentDash && isTargetDash;
 
-    if (options?.immediate) {
+    // Dashboard-to-dashboard: show tab loader IMMEDIATELY (no debounce)
+    // so the progress bar is always visible when switching tabs
+    if (isInsideDashboard || isTargetDash || options?.immediate) {
       if (isInsideDashboard || isTargetDash) {
         setIsDashboardTabLoading(true);
         setIsFullViewLoading(false);
@@ -181,18 +200,11 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         setIsDashboardTabLoading(false);
       }
     } else {
-      // 0–50 ms: Do not show a loader.
-      // Over 50 ms: Show the appropriate loader.
+      // Non-dashboard navigation: 50ms debounce
       navTimerRef.current = setTimeout(() => {
         if (!isNavigatingRef.current) return;
-
-        if (isInsideDashboard || isTargetDash) {
-          setIsDashboardTabLoading(true);
-          setIsFullViewLoading(false);
-        } else {
-          setIsFullViewLoading(true);
-          setIsDashboardTabLoading(false);
-        }
+        setIsFullViewLoading(true);
+        setIsDashboardTabLoading(false);
       }, 50);
     }
 
@@ -245,7 +257,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         if (url.origin !== window.location.origin) return;
         if (url.pathname === window.location.pathname) return;
 
-        startNavigation(url.pathname);
+        setTimeout(() => {
+          startNavigation(url.pathname);
+        }, 0);
       } catch {
         // Ignore invalid URL
       }
@@ -253,7 +267,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
 
     const handlePopState = () => {
       if (window.location.pathname !== pathname) {
-        startNavigation(window.location.pathname);
+        setTimeout(() => {
+          startNavigation(window.location.pathname);
+        }, 0);
       }
     };
 
@@ -266,7 +282,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         try {
           const parsed = new URL(url, window.location.href);
           if (parsed.pathname !== window.location.pathname) {
-            startNavigation(parsed.pathname);
+            setTimeout(() => {
+              startNavigation(parsed.pathname);
+            }, 0);
           }
         } catch {
           // Ignore
@@ -304,6 +322,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         isNavComplete,
         startNavigation,
         endNavigation,
+        dismissNavLoader,
         startLoading,
         stopLoading,
       }}
@@ -311,33 +330,37 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
       {/* 1. INITIAL LOAD & REFRESH LOADER: Screen loader with download line that completes when page loads */}
       {isInitialLoading && (
         <div
-          aria-hidden="true"
-          className={`fixed inset-0 z-[99999] flex items-center justify-center transition-opacity duration-200 ease-out ${
-            isInitialFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
+          className={`fixed inset-0 z-[99999] flex items-center justify-center bg-[#F6F5F2] transition-opacity duration-200 ${
+            isInitialFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
-          style={{ backgroundColor: '#F6F5F2' }}
         >
           <KitScreenLoader
+            fullScreen={false}
+            size="md"
             showText={true}
+            showProgressBar={true}
+            loop={true}
+            duration={1.25}
+            transparent={false}
             isComplete={isInitialComplete}
             onComplete={handleInitialComplete}
-            fullScreen={false}
-            transparent={true}
           />
         </div>
       )}
 
-      {/* 2. SUBSEQUENT FULL-VIEW LOADING (Outside dashboard only, over 50ms) */}
-      {!isInitialLoading && isFullViewLoading && (
-        <div 
-          aria-hidden="true" 
-          className="fixed inset-0 z-[99998] flex items-center justify-center bg-[#F6F5F2]/95 backdrop-blur-md pointer-events-auto transition-opacity duration-150"
-        >
+      {/* 2. FULL-VIEW LOADER: For navigations outside dashboard */}
+      {isFullViewLoading && !isInitialLoading && (
+        <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-[#F6F5F2]/95 backdrop-blur-md">
           <KitScreenLoader
-            showText={false}
-            isComplete={isNavComplete}
             fullScreen={false}
+            size="md"
+            showText={false}
+            showProgressBar={true}
+            loop={true}
+            duration={1.25}
             transparent={true}
+            isComplete={isNavComplete}
+            onComplete={dismissNavLoader}
           />
         </div>
       )}

@@ -8,8 +8,10 @@ import { RoleSelector } from "@/components/RoleSelector";
 
 export function LoginPageClient({
   onLoginSuccess,
+  onBackToPublic,
 }: {
   onLoginSuccess?: (role: RoleType) => void;
+  onBackToPublic?: () => void;
 }) {
   const router = useRouter();
   const [role, setRole] = useState<RoleType>("HOD");
@@ -48,7 +50,7 @@ export function LoginPageClient({
       if (onLoginSuccess) {
         onLoginSuccess(role);
       } else {
-        router.push("/");
+        router.push(role === "HOD" ? "/hod" : "/coordinator");
       }
     }, 450);
   };
@@ -57,7 +59,16 @@ export function LoginPageClient({
     <div className="min-h-screen bg-[#F6F5F2] flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
       <div className="max-w-md w-full">
         {/* Main Card */}
-        <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-200/90">
+        <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-200/90 relative">
+          {onBackToPublic && (
+            <button
+              onClick={onBackToPublic}
+              type="button"
+              className="absolute left-6 top-6 text-xs text-slate-400 hover:text-slate-700 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              ← Student Portal
+            </button>
+          )}
           {/* Header with KIT Logo */}
           <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
             <div className="h-14 sm:h-16 max-w-[240px] flex items-center justify-center mb-3">

@@ -1,4 +1,4 @@
-export type RoleType = "HOD" | "STUDENT" | "COORDINATOR";
+export type RoleType = "HOD" | "COORDINATOR";
 
 export interface UserSession {
   role: RoleType;
@@ -25,15 +25,6 @@ export const ROLE_DATA: Record<RoleType, {
     emoji: "🎓",
     shortAction: "Manage Roles",
   },
-  STUDENT: {
-    name: "Aarav Sharma",
-    email: "student.lead@kit.ac.in",
-    initial: "AS",
-    roleLabel: "Student",
-    dept: "B.Tech Final Year (CSE)",
-    emoji: "👨‍🎓",
-    shortAction: "Submit Model",
-  },
   COORDINATOR: {
     name: "Dr. A. Sharma",
     email: "coordinator@kit.ac.in",
@@ -54,7 +45,7 @@ export function getActiveSession(): UserSession | null {
     const local = localStorage.getItem(AUTH_COOKIE_NAME);
     if (local) {
       const parsed = JSON.parse(local);
-      if (parsed?.role && (parsed.role === "HOD" || parsed.role === "STUDENT" || parsed.role === "COORDINATOR")) {
+      if (parsed?.role && (parsed.role === "HOD" || parsed.role === "COORDINATOR")) {
         return parsed;
       }
     }
@@ -79,6 +70,9 @@ export function saveActiveSession(session: UserSession) {
     localStorage.setItem(AUTH_COOKIE_NAME, str);
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(str)}; path=/; max-age=604800; SameSite=Lax`;
+  try {
+    window.dispatchEvent(new Event("kit-auth-change"));
+  } catch {}
 }
 
 export function clearActiveSession() {
@@ -87,4 +81,104 @@ export function clearActiveSession() {
     localStorage.removeItem(AUTH_COOKIE_NAME);
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+  try {
+    window.dispatchEvent(new Event("kit-auth-change"));
+  } catch {}
 }
+
+export interface RolePermissions {
+  role: RoleType;
+  roleName: string;
+  baseRoute: string;
+  description: string;
+  allowedRoutes: string[];
+  restrictedRoutes: string[];
+  canInitiateProjects: boolean;
+  canManageRoles: boolean;
+  canReviewForms: boolean;
+  canViewStudents: boolean;
+  canViewProjects: boolean;
+  canEvaluateSubmissions: boolean;
+}
+
+export const ROLE_PERMISSIONS: Record<RoleType, RolePermissions> = {
+  HOD: {
+    role: "HOD",
+    roleName: "Head of Department (HOD)",
+    baseRoute: "/hod",
+    description: "Full administrative and departmental oversight, rubric approvals, project initiation, and role governance.",
+    allowedRoutes: ["/hod", "/hod/forms", "/hod/projects", "/hod/projects/new", "/hod/students", "/hod/roles", "/coordinator"],
+    restrictedRoutes: [],
+    canInitiateProjects: true,
+    canManageRoles: true,
+    canReviewForms: true,
+    canViewStudents: true,
+    canViewProjects: true,
+    canEvaluateSubmissions: true,
+  },
+  COORDINATOR: {
+    role: "COORDINATOR",
+    roleName: "Faculty / Project Coordinator",
+    baseRoute: "/coordinator",
+    description: "Supervises student batches, monitors capstone progress, and conducts rubric evaluations. Cannot initiate projects or manage roles.",
+    allowedRoutes: ["/coordinator", "/coordinator/forms", "/coordinator/projects", "/coordinator/students"],
+    restrictedRoutes: ["/hod", "/hod/roles", "/hod/projects/new", "/roles", "/projects/new"],
+    canInitiateProjects: false,
+    canManageRoles: false,
+    canReviewForms: true,
+    canViewStudents: true,
+    canViewProjects: true,
+    canEvaluateSubmissions: true,
+  },
+};
+
+export function getRoleHomeRoute(role?: RoleType | null): string {
+  if (role === "HOD") return "/hod";
+  if (role === "COORDINATOR") return "/coordinator";
+  return "/";
+}
+
+export function isRouteAllowedForRole(pathname: string, role: RoleType): boolean {
+  // Public routes
+  if (pathname === "/" || pathname === "/login" || pathname === "/register") {
+    return true;
+  }
+
+  // HOD dedicated routes: STRICTLY HOD ONLY
+  if (pathname === "/hod" || pathname.startsWith("/hod/")) {
+    return role === "HOD";
+  }
+
+  // Coordinator dedicated routes: COORDINATOR (and HOD super-admin inspection)
+  if (pathname === "/coordinator" || pathname.startsWith("/coordinator/")) {
+    return role === "COORDINATOR" || role === "HOD";
+  }
+
+  // Legacy routes
+  if (pathname === "/roles" || pathname.startsWith("/roles/") || pathname.startsWith("/projects/new")) {
+    return role === "HOD";
+  }
+
+  return true;
+}
+
+
+export function parseSessionCookie(cookieValue: string | undefined | null): UserSession | null {
+  if (!cookieValue) return null;
+  try {
+    const decoded = decodeURIComponent(cookieValue);
+    const parsed = JSON.parse(decoded);
+    if (parsed?.role === "HOD" || parsed?.role === "COORDINATOR") {
+      return parsed;
+    }
+  } catch {
+    try {
+      const parsed = JSON.parse(cookieValue);
+      if (parsed?.role === "HOD" || parsed?.role === "COORDINATOR") {
+        return parsed;
+      }
+    } catch {}
+  }
+  return null;
+}
+

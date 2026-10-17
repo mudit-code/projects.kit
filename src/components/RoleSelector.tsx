@@ -18,12 +18,6 @@ export const ROLE_OPTIONS: RoleOption[] = [
     subtitle: "Manage Roles",
   },
   {
-    role: "STUDENT",
-    emoji: "👨‍🎓",
-    title: "Student",
-    subtitle: "Submit Model",
-  },
-  {
     role: "COORDINATOR",
     emoji: "👩‍💼",
     title: "Faculty",
@@ -39,7 +33,7 @@ export function RoleSelector({
   onSelectRole: (role: RoleType) => void;
 }) {
   return (
-    <div className="grid grid-cols-3 gap-2.5 w-full select-none">
+    <div className="grid grid-cols-2 gap-3 w-full select-none">
       {ROLE_OPTIONS.map((opt) => {
         const isSelected = selectedRole === opt.role;
         return (
