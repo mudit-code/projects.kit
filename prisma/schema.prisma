@@ -1,0 +1,128 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+model Student {
+  id         Int      @id @default(autoincrement())
+  afn        String   @unique
+  rollNumber String   @unique
+  name       String
+  email      String
+  year       String
+  batch      String?
+  course     String
+  section    String
+  stream     String
+  gender     String?
+  phone      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Form {
+  id                      String       @id
+  subjectCode             String
+  title                   String
+  course                  String
+  stream                  String
+  year                    String
+  section                 String
+  category                String       @default("Academic")
+  projectType             String       @default("Mini Project")
+  customProjectName       String?
+  startDate               String?
+  deadline                String
+  publishedAt             String?
+  status                  String       @default("Active")
+  publishedBy             String?
+  assignedTo              String       @default("self")
+  coordinatorName         String?
+  coordinatorEmail        String?
+  coordinatorPhone        String?
+  coordinatorRole         String?
+  finalSubmissionOpen     Boolean      @default(false)
+  finalSubmissionDeadline String?
+  presentationsScheduled  Boolean      @default(false)
+  presentationsConfig     String?      // JSON stringified configuration
+  isTrashed               Boolean      @default(false)
+  trashedAt               DateTime?
+  trashExpiresAt          DateTime?
+  deletedBy               String?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+  submissions             Submission[]
+  projects                Project[]
+}
+
+model Submission {
+  id                 String   @id @default(cuid())
+  formId             String
+  form               Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  projectName        String
+  projectDescription String?
+  registrationType   String   @default("Individual")
+  submittedAt        DateTime @default(now())
+  verificationStatus String   @default("pending")
+  studentAfn         String
+  studentRollNumber  String
+  studentName        String
+  studentEmail       String
+  studentPhone       String?
+  studentCourse      String?
+  studentStream      String?
+  studentYear        String?
+  studentSection     String?
+  teamMembers        String?  // JSON stringified array of team members
+  approvalStatus     String?  @default("pending")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([formId])
+  @@index([studentAfn])
+}
+
+model Project {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  category        String   @default("Academic")
+  formId          String?
+  form            Form?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  session         String   @default("2026-27")
+  course          String   @default("B.Tech")
+  stream          String   @default("Computer Science & Engineering")
+  year            String   @default("4th Year")
+  section         String   @default("A")
+  status          String   @default("In Progress")
+  guideName       String?
+  guideEmail      String?
+  teamLeaderAfn   String?
+  teamLeaderName  String?
+  teamLeaderEmail String?
+  teamMembers     String?  // JSON stringified array
+  repoUrl         String?
+  liveUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([formId])
+}
+
+model ReminderLog {
+  id         String   @id @default(cuid())
+  formId     String
+  studentAfn String
+  sentAt     DateTime @default(now())
+  sentBy     String
+  channel    String   @default("email")
+
+  @@index([formId])
+  @@index([studentAfn])
+}

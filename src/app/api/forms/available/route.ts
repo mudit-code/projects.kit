@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAllServerForms } from "@/lib/serverForms";
 
 /**
  * GET /api/forms/available
  *
- * Available project registration forms are driven directly by published
- * initiatives (kit_published_initiatives) on the client, keeping the
- * student portal in 100% real-time synchronization with the HOD/Faculty dashboard.
+ * Returns active forms from the real database for student registration.
  */
-export async function GET(request: NextRequest) {
-  return NextResponse.json({ forms: [] });
+export async function GET(_request: NextRequest) {
+  try {
+    const forms = await getAllServerForms();
+    return NextResponse.json({ forms });
+  } catch (err: any) {
+    return NextResponse.json(
+      { success: false, forms: [], error: err?.message },
+      { status: 500 }
+    );
+  }
 }

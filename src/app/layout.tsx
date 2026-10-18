@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "projects.kit",
-  description: "Next-generation college project lifecycle management: proposals, guide allocations, sprint milestones, rubric evaluations, and certified dossiers.",
+  description: "Next-generation college project lifecycle management: project registrations, guide allocations, sprint milestones, rubric evaluations, and certified dossiers.",
   icons: {
     icon: "data:,",
     shortcut: "data:,",

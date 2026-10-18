@@ -105,16 +105,37 @@ function loadSubmissions(): Record<string, PublicSubmission[]> {
 
 function saveSubmissions(data: Record<string, PublicSubmission[]>) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    window.dispatchEvent(new Event("kit-submissions-change"));
+    window.dispatchEvent(new Event("storage"));
+  } catch {
+    // ignore
+  }
 }
 
 function findSubmissionByAfn(afn: string): PublicSubmission | null {
+  const cleanAfn = afn.trim().toUpperCase();
   const all = loadSubmissions();
   for (const formId of Object.keys(all)) {
-    for (const sub of all[formId]) {
-      if (sub.student.afn === afn) return sub;
-      for (const tm of sub.teamMembers) {
-        if (tm.afn === afn) return sub;
+    if (Array.isArray(all[formId])) {
+      for (const sub of all[formId]) {
+        if (
+          (sub.student?.afn && sub.student.afn.trim().toUpperCase() === cleanAfn) ||
+          (sub.student?.rollNumber && sub.student.rollNumber.trim().toUpperCase() === cleanAfn)
+        ) {
+          return sub;
+        }
+        if (Array.isArray(sub.teamMembers)) {
+          for (const tm of sub.teamMembers) {
+            if (
+              (tm.afn && tm.afn.trim().toUpperCase() === cleanAfn) ||
+              ((tm as any).rollNumber && (tm as any).rollNumber.trim().toUpperCase() === cleanAfn)
+            ) {
+              return sub;
+            }
+          }
+        }
       }
     }
   }
@@ -301,33 +322,6 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
           const stored = localStorage.getItem("kit_published_initiatives");
           if (stored) {
             publishedInitiatives = JSON.parse(stored);
-          } else {
-            publishedInitiatives = [
-              {
-                id: "INIT-BCS751",
-                subjectCode: "BCS751",
-                course: "B.Tech",
-                stream: "Computer Science & Engineering",
-                year: "4th Year",
-                section: "A",
-                category: "Academic",
-                projectType: "Mini Project",
-                customProjectName: "Mini Project",
-                startDate: "2026-10-16",
-                deadline: "2026-11-30",
-                publishedAt: "16 Oct 2026",
-                status: "Active",
-                publishedBy: "Rahul Singh",
-                assignedTo: "self",
-                coordinator: {
-                  name: "Rahul Singh",
-                  email: "hod@kit.ac.in",
-                  phone: "+91 98765 43210",
-                  role: "HOD",
-                },
-              },
-            ];
-            localStorage.setItem("kit_published_initiatives", JSON.stringify(publishedInitiatives));
           }
         } catch {
           publishedInitiatives = [];
@@ -456,11 +450,50 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     };
 
     const all = loadSubmissions();
-    if (!all[selectedForm.id]) {
-      all[selectedForm.id] = [];
+    const primaryKey = selectedForm.id;
+    if (!all[primaryKey]) {
+      all[primaryKey] = [];
     }
-    all[selectedForm.id].push(submission);
+
+    // Deduplicate or append
+    const existingIdx = all[primaryKey].findIndex(
+      (s) =>
+        (s.student?.afn && s.student.afn.trim().toUpperCase() === student.afn.trim().toUpperCase()) ||
+        (s.student?.rollNumber && s.student.rollNumber.trim().toUpperCase() === student.rollNumber.trim().toUpperCase())
+    );
+    if (existingIdx >= 0) {
+      all[primaryKey][existingIdx] = submission;
+    } else {
+      all[primaryKey].push(submission);
+    }
+
+    // Also sync under subjectCode key (e.g. BCS751) if different from primaryKey
+    if (selectedForm.subjectCode && selectedForm.subjectCode !== primaryKey) {
+      const codeKey = selectedForm.subjectCode;
+      if (!all[codeKey]) all[codeKey] = [];
+      const codeIdx = all[codeKey].findIndex(
+        (s) =>
+          (s.student?.afn && s.student.afn.trim().toUpperCase() === student.afn.trim().toUpperCase()) ||
+          (s.student?.rollNumber && s.student.rollNumber.trim().toUpperCase() === student.rollNumber.trim().toUpperCase())
+      );
+      if (codeIdx >= 0) {
+        all[codeKey][codeIdx] = submission;
+      } else {
+        all[codeKey].push(submission);
+      }
+    }
+
     saveSubmissions(all);
+
+    // Persist to server API in background
+    fetch(`/api/forms/${encodeURIComponent(selectedForm.id)}/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formId: selectedForm.id,
+        submission,
+      }),
+    }).catch(() => {});
 
     setExistingSubmission(submission);
     setStep("success");

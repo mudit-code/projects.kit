@@ -84,7 +84,7 @@ export default function StartProjectPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
@@ -156,13 +156,24 @@ export default function StartProjectPage() {
           }
         : {
             name: "Rahul Singh",
-            email: "hod@kit.ac.in",
+            email: "muditcodes@gmail.com",
             phone: "+91 98765 43210",
             role: "HOD"
           },
     };
 
-    // Save to localStorage
+    // Save to real database via API
+    try {
+      await fetch("/api/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newInitiative),
+      });
+    } catch (err) {
+      console.warn("Could not sync initiative to server database:", err);
+    }
+
+    // Also update client state for instantaneous optimistic UI update
     try {
       const existing = JSON.parse(localStorage.getItem("kit_published_initiatives") || "[]");
       existing.unshift(newInitiative);
@@ -489,7 +500,7 @@ export default function StartProjectPage() {
                       </div>
                       <div>
                         <p className="font-bold text-slate-900">Project Coordinator: HOD himself</p>
-                        <p className="text-[11px] text-slate-500">Rahul Singh · hod@kit.ac.in</p>
+                        <p className="text-[11px] text-slate-500">Rahul Singh · muditcodes@gmail.com</p>
                       </div>
                     </div>
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-blue-100 text-[#0D3481]">

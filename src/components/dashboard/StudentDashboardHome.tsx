@@ -38,22 +38,35 @@ export function StudentDashboardHome() {
     }
 
     // Count pending forms eligible for this student
-    try {
-      let prof = DEFAULT_STUDENT_PROFILE;
-      const storedProf = localStorage.getItem("kit_student_profile");
-      if (storedProf) prof = JSON.parse(storedProf);
+    const checkEligible = async () => {
+      try {
+        let prof = DEFAULT_STUDENT_PROFILE;
+        const storedProf = localStorage.getItem("kit_student_profile");
+        if (storedProf) prof = JSON.parse(storedProf);
 
-      const stored = localStorage.getItem("kit_published_initiatives");
-      if (stored) {
-        const parsed: any[] = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const eligible = parsed.filter((item) => isStudentEligibleForForm(prof, item));
+        let formsList: any[] = [];
+        try {
+          const res = await fetch("/api/forms");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.forms)) {
+              formsList = data.forms;
+            }
+          }
+        } catch {
+          const stored = localStorage.getItem("kit_published_initiatives");
+          if (stored) formsList = JSON.parse(stored);
+        }
+
+        if (Array.isArray(formsList)) {
+          const eligible = formsList.filter((item) => isStudentEligibleForForm(prof, item));
           setFormCount(eligible.length);
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
+    };
+    checkEligible();
 
     const currentHour = new Date().getHours();
     setTimeData(getTimePhrase(currentHour));

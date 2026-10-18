@@ -150,40 +150,27 @@ export function FormsTable() {
   useEffect(() => {
     setIsMounted(true);
     setSession(getActiveSession());
-    const loadInitiatives = () => {
+    const loadInitiatives = async () => {
+      try {
+        const res = await fetch("/api/forms");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.forms)) {
+            const valid = data.forms.filter((f: any) => f.id !== "INIT-759402" && f.id !== "INIT-BCS751");
+            setInitiatives(valid);
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(valid));
+            return;
+          }
+        }
+      } catch {
+        // fallback to localStorage cache
+      }
       try {
         const stored = localStorage.getItem("kit_published_initiatives");
-        let list: any[] = stored ? JSON.parse(stored) : [];
-
-        if (list.length === 0) {
-          list = [
-            {
-              id: "INIT-BCS751",
-              subjectCode: "BCS751",
-              course: "B.Tech",
-              stream: "Computer Science & Engineering",
-              year: "4th Year",
-              section: "A",
-              category: "Academic",
-              projectType: "Mini Project",
-              customProjectName: "Mini Project",
-              startDate: "2026-10-16",
-              deadline: "2026-11-30",
-              publishedAt: "16 Oct 2026",
-              status: "Active",
-              publishedBy: "Rahul Singh",
-              assignedTo: "self",
-              coordinator: {
-                name: "Rahul Singh",
-                email: "hod@kit.ac.in",
-                phone: "+91 98765 43210",
-                role: "HOD",
-              },
-            },
-          ];
-          localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
-        }
-        setInitiatives(list);
+        const list: any[] = stored ? JSON.parse(stored) : [];
+        const valid = list.filter((f: any) => f.id !== "INIT-759402" && f.id !== "INIT-BCS751");
+        localStorage.setItem("kit_published_initiatives", JSON.stringify(valid));
+        setInitiatives(valid);
       } catch {
         setInitiatives([]);
       }
@@ -199,10 +186,13 @@ export function FormsTable() {
     };
   }, []);
 
-  const handleDeleteInitiative = (id: string, e?: React.MouseEvent) => {
+  const handleDeleteInitiative = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (typeof window !== "undefined" && !window.confirm("Are you sure you want to remove this published form?")) return;
     try {
+      await fetch(`/api/forms/${encodeURIComponent(id)}?permanent=true`, {
+        method: "DELETE",
+      });
       const stored = localStorage.getItem("kit_published_initiatives");
       const list = stored ? JSON.parse(stored) : [];
       const updated = list.filter((item: any) => item.id !== id);
@@ -217,14 +207,19 @@ export function FormsTable() {
     }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const stored = localStorage.getItem("kit_published_initiatives");
-      const list = stored ? JSON.parse(stored) : [];
-      setInitiatives(list);
+      const res = await fetch("/api/forms");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.forms)) {
+          setInitiatives(data.forms);
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
+        }
+      }
     } catch {
-      setInitiatives([]);
+      // ignore
     }
     setTimeout(() => {
       setIsRefreshing(false);

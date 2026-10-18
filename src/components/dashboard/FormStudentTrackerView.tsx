@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   StudentRecord,
   getEligibleStudentsForForm,
 } from "@/lib/formTargeting";
+import { getActiveSession, UserSession } from "@/lib/auth";
+import { GmailRichEditor } from "./GmailRichEditor";
+import * as XLSX from "xlsx";
 import {
   ArrowLeft,
   Search,
@@ -18,14 +21,27 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   FileText,
+  FileSpreadsheet,
   User,
   RotateCw,
   Trash2,
   Check,
   Bell,
   AlertCircle,
+  AlertTriangle,
+  Copy,
+  Mail,
+  Send,
+  Loader2,
+  Eye,
+  Edit3,
+  RotateCcw,
+  UserPlus,
+  Settings,
 } from "lucide-react";
+import { FormSettingsModal } from "./FormSettingsModal";
 
 type SubmissionInfo = {
   formId?: string;
@@ -75,6 +91,8 @@ export function FormStudentTrackerView({
     submission: SubmissionInfo;
   } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [serverSubmissions, setServerSubmissions] = useState<any[]>([]);
+  const [refreshTick, setRefreshTick] = useState(0);
   type ToastType = "success" | "warning" | "info";
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
@@ -91,6 +109,98 @@ export function FormStudentTrackerView({
   // Extend deadline modal state
   const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
   const [newDeadlineDate, setNewDeadlineDate] = useState("");
+
+  // Form Settings modal state
+  const [isFormSettingsOpen, setIsFormSettingsOpen] = useState(false);
+
+  // Reminder workflow state
+  const [isRemindModalOpen, setIsRemindModalOpen] = useState(false);
+  const [isSendingReminders, setIsSendingReminders] = useState(false);
+  const [remindTargetStudents, setRemindTargetStudents] = useState<StudentRecord[]>([]);
+  const [lastRemindedAt, setLastRemindedAt] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [modalCopySuccess, setModalCopySuccess] = useState(false);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [activeModalTab, setActiveModalTab] = useState<"compose" | "recipients" | "preview">("compose");
+  const [session, setSession] = useState<UserSession | null>(null);
+  const [newRecipientEmail, setNewRecipientEmail] = useState("");
+  const [newRecipientName, setNewRecipientName] = useState("");
+
+  // Warning confirmation dialog state
+  type WarningDialogState =
+    | {
+        type: "remove_single";
+        student: StudentRecord;
+        projectName?: string;
+        teamMembers?: Array<{ afn: string; name: string }>;
+      }
+    | {
+        type: "reset_all";
+        count: number;
+      }
+    | {
+        type: "clear_recipients";
+      }
+    | null;
+
+  const [warningDialog, setWarningDialog] = useState<WarningDialogState>(null);
+
+  // Close warning dialog on Escape key
+  useEffect(() => {
+    if (!warningDialog) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setWarningDialog(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [warningDialog]);
+
+  // Download menu dropdown state
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target as Node)) {
+        setIsDownloadMenuOpen(false);
+      }
+    };
+    if (isDownloadMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDownloadMenuOpen]);
+
+  // Load reminder stats and session on mount
+  useEffect(() => {
+    setSession(getActiveSession());
+    if (!formId) return;
+    fetch(`/api/forms/${encodeURIComponent(formId)}/remind`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.lastSentAt) {
+          setLastRemindedAt(data.lastSentAt);
+        }
+      })
+      .catch(() => {});
+  }, [formId]);
+
+  // Escape key listener for accessible modal dismissal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isRemindModalOpen && !isSendingReminders) {
+        setIsRemindModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRemindModalOpen, isSendingReminders]);
 
   // Approvals persistence: { [studentAfn]: "approved" | "not_approved" }
   const [approvals, setApprovals] = useState<Record<string, "approved" | "not_approved">>({});
@@ -115,18 +225,47 @@ export function FormStudentTrackerView({
     } catch {
       // ignore
     }
-    showToast(status === "approved" ? "Proposal marked as Approved." : "Proposal marked as Not Approved.");
+    // Sync to database via API
+    fetch("/api/submissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formId,
+        studentAfn: afn,
+        approvalStatus: status,
+      }),
+    }).catch(() => {});
+    showToast(status === "approved" ? "Registration marked as Approved." : "Registration marked as Not Approved.");
   };
 
-  // Remove a single student's proposal (and group members) and revert to Pending
-  const handleRemoveSingleSubmission = (targetStudent: StudentRecord, projectName?: string) => {
-    const confirmPrompt = projectName
-      ? `Remove proposal "${projectName}" and set ${targetStudent.name} (and team members) back to Pending?`
-      : `Remove proposal for ${targetStudent.name} and set status back to Pending?`;
+  // Prompt warning card to remove a single student's registration
+  const promptRemoveSingleSubmission = (
+    targetStudent: StudentRecord,
+    projectName?: string,
+    teamMembers?: Array<{ afn: string; name: string }>
+  ) => {
+    setWarningDialog({
+      type: "remove_single",
+      student: targetStudent,
+      projectName,
+      teamMembers,
+    });
+  };
 
-    if (typeof window !== "undefined" && !window.confirm(confirmPrompt)) {
-      return;
-    }
+  // Backwards compatible wrapper so any caller gets the warning card
+  const handleRemoveSingleSubmission = (targetStudent: StudentRecord, projectName?: string) => {
+    // If selectedSubmission is currently open for this student, extract teamMembers if available
+    const members =
+      selectedSubmission?.student?.afn === targetStudent.afn
+        ? selectedSubmission.submission?.teamMembers
+        : undefined;
+    promptRemoveSingleSubmission(targetStudent, projectName, members);
+  };
+
+  // Execute the removal after user confirms in the warning pop-up card
+  const executeRemoveSingleSubmission = () => {
+    if (!warningDialog || warningDialog.type !== "remove_single") return;
+    const { student: targetStudent, projectName } = warningDialog;
 
     try {
       // 1. Clean kit_public_submissions
@@ -184,154 +323,154 @@ export function FormStudentTrackerView({
         }
       }
 
+      // 3. Clean serverSubmissions state
+      setServerSubmissions((prev) =>
+        prev.filter((sub: any) => {
+          const isLead =
+            sub.student?.afn === targetStudent.afn ||
+            sub.studentAfn === targetStudent.afn;
+          const isMember =
+            Array.isArray(sub.teamMembers) &&
+            sub.teamMembers.some((m: any) => m.afn === targetStudent.afn);
+          return !(isLead || isMember);
+        })
+      );
+
+      // 4. Sync removal to real database via API
+      fetch(`/api/submissions?formId=${encodeURIComponent(formId)}&studentAfn=${encodeURIComponent(targetStudent.afn)}`, {
+        method: "DELETE",
+      }).catch(() => {});
+
       window.dispatchEvent(new Event("kit-submissions-change"));
       window.dispatchEvent(new Event("kit-initiatives-change"));
       setSelectedSubmission(null);
+      setWarningDialog(null);
       setIsRefreshing((prev) => !prev);
-      showToast(`Proposal removed. ${targetStudent.name} is now Pending.`);
+      showToast(`Registration removed. ${targetStudent.name} is now Pending.`);
     } catch {
-      // ignore
+      setWarningDialog(null);
     }
   };
 
   // Clear submissions / reset roster
   const handleClearSubmissions = () => {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm("Do you want to reset all submissions and set all students back to Pending (0 submitted)?")
-    )
-      return;
+    setWarningDialog({
+      type: "reset_all",
+      count: registeredCount,
+    });
+  };
+
+  // Execute reset all once confirmed
+  const executeClearAllSubmissions = () => {
     try {
       localStorage.removeItem("kit_public_submissions");
       localStorage.removeItem("kit_student_form_submissions");
+      setServerSubmissions([]);
       window.dispatchEvent(new Event("kit-submissions-change"));
       window.dispatchEvent(new Event("kit-initiatives-change"));
       setIsRefreshing((prev) => !prev);
       setSelectedSubmission(null);
-      showToast("All submissions reset. All 60 cohort students are now Pending.");
+      setWarningDialog(null);
+      showToast("All submissions reset. All cohort students are now Pending.");
     } catch {
-      // ignore
+      setWarningDialog(null);
     }
   };
 
-  // 2. Load the initiative/form details
-  useEffect(() => {
-    const loadForm = () => {
-      try {
-        const stored = localStorage.getItem("kit_published_initiatives");
-        let list: any[] = stored ? JSON.parse(stored) : [];
-
-        // If list is empty, supply default published BCS751
-        if (list.length === 0) {
-          list = [
-            {
-              id: "INIT-BCS751",
-              subjectCode: "BCS751",
-              course: "B.Tech",
-              stream: "Computer Science & Engineering",
-              year: "4th Year",
-              section: "A",
-              category: "Academic",
-              projectType: "Mini Project",
-              customProjectName: "Mini Project",
-              startDate: "2026-10-16",
-              deadline: "2026-10-21",
-              publishedAt: "16 Oct 2026",
-              status: "Active",
-              publishedBy: "Rahul Singh",
-              assignedTo: "self",
-              coordinator: {
-                name: "Rahul Singh",
-                email: "hod@kit.ac.in",
-                phone: "+91 98765 43210",
-                role: "HOD",
-              },
-            },
-          ];
-          localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
-        }
-
-        const decoded = decodeURIComponent(formId);
-        const found = list.find(
-          (item) =>
-            String(item.id) === decoded ||
-            String(item.subjectCode || "").toUpperCase() === decoded.toUpperCase() ||
-            String(item.id).toUpperCase() === decoded.toUpperCase()
-        );
-
-        if (found) {
-          setForm(found);
-          setNewDeadlineDate(found.deadline || "2026-10-21");
-        } else if (list.length > 0) {
-          setForm(list[0]);
-          setNewDeadlineDate(list[0].deadline || "2026-10-21");
-        }
-      } catch {
-        setForm(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Auto-clean sample / test proposals so roster displays clean Pending cohort
+  // 2. Fetch server-persisted submissions for this form
+  const fetchSubmissionsFromServer = useCallback(async () => {
+    if (!formId) return [];
     try {
-      let publicModified = false;
-      const rawPublic = localStorage.getItem("kit_public_submissions");
-      if (rawPublic) {
-        const publicSubs: Record<string, any[]> = JSON.parse(rawPublic);
-        for (const k of Object.keys(publicSubs)) {
-          if (Array.isArray(publicSubs[k])) {
-            const initialLen = publicSubs[k].length;
-            publicSubs[k] = publicSubs[k].filter(
-              (sub: any) =>
-                !String(sub.projectName || "").toLowerCase().includes("quadcopter")
-            );
-            if (publicSubs[k].length !== initialLen) {
-              publicModified = true;
+      const res = await fetch(`/api/forms/${encodeURIComponent(formId)}/submissions`);
+      if (res.ok) {
+        const data = await res.json();
+        const subs: any[] = Array.isArray(data?.submissions) ? data.submissions : [];
+        setServerSubmissions(subs);
+
+        // Merge into local storage so offline/client-only views have the data too
+        if (typeof window !== "undefined" && subs.length > 0) {
+          try {
+            const raw = localStorage.getItem("kit_public_submissions");
+            const localMap: Record<string, any[]> = raw ? JSON.parse(raw) : {};
+            const primaryKey = String(formId);
+            if (!localMap[primaryKey]) localMap[primaryKey] = [];
+
+            let modified = false;
+            for (const s of subs) {
+              const sAfn = s.student?.afn?.trim().toUpperCase();
+              const sRoll = s.student?.rollNumber?.trim().toUpperCase();
+              const exists = localMap[primaryKey].some((ls: any) => {
+                const lsAfn = ls.student?.afn?.trim().toUpperCase();
+                const lsRoll = ls.student?.rollNumber?.trim().toUpperCase();
+                return (sAfn && lsAfn === sAfn) || (sRoll && lsRoll === sRoll);
+              });
+              if (!exists) {
+                localMap[primaryKey].push(s);
+                modified = true;
+              }
             }
+            if (modified) {
+              localStorage.setItem("kit_public_submissions", JSON.stringify(localMap));
+            }
+          } catch {
+            // ignore
           }
         }
-        if (publicModified) {
-          localStorage.setItem("kit_public_submissions", JSON.stringify(publicSubs));
-        }
-      }
-
-      let studentModified = false;
-      const rawStudent = localStorage.getItem("kit_student_form_submissions");
-      if (rawStudent) {
-        const studentSubs: Record<string, any> = JSON.parse(rawStudent);
-        for (const k of Object.keys(studentSubs)) {
-          const title = String(
-            studentSubs[k]?.projectTitle ||
-              studentSubs[k]?.projectName ||
-              studentSubs[k]?.title ||
-              ""
-          );
-          if (title.toLowerCase().includes("quadcopter")) {
-            delete studentSubs[k];
-            studentModified = true;
-          }
-        }
-        if (studentModified) {
-          localStorage.setItem("kit_student_form_submissions", JSON.stringify(studentSubs));
-        }
-      }
-
-      if (publicModified || studentModified) {
-        window.dispatchEvent(new Event("kit-submissions-change"));
+        return subs;
       }
     } catch {
       // ignore
     }
-
-    loadForm();
-    window.addEventListener("kit-initiatives-change", loadForm);
-    window.addEventListener("storage", loadForm);
-    return () => {
-      window.removeEventListener("kit-initiatives-change", loadForm);
-      window.removeEventListener("storage", loadForm);
-    };
+    return [];
   }, [formId]);
+
+  // Load the initiative/form details
+  const loadForm = useCallback(() => {
+    try {
+      const stored = localStorage.getItem("kit_published_initiatives");
+      let list: any[] = stored ? JSON.parse(stored) : [];
+
+      const decoded = decodeURIComponent(formId);
+      const found = list.find(
+        (item) =>
+          String(item.id) === decoded ||
+          String(item.id).toUpperCase() === decoded.toUpperCase() ||
+          String(item.subjectCode || "").toUpperCase() === decoded.toUpperCase()
+      );
+
+      if (found) {
+        setForm(found);
+        setNewDeadlineDate(found.deadline || "2026-10-21");
+      } else if (list.length > 0) {
+        setForm(list[0]);
+        setNewDeadlineDate(list[0].deadline || "2026-10-21");
+      }
+    } catch {
+      setForm(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [formId]);
+
+  useEffect(() => {
+    loadForm();
+    fetchSubmissionsFromServer();
+
+    const handleSync = () => {
+      loadForm();
+      fetchSubmissionsFromServer();
+      setRefreshTick((t) => t + 1);
+    };
+
+    window.addEventListener("kit-initiatives-change", handleSync);
+    window.addEventListener("kit-submissions-change", handleSync);
+    window.addEventListener("storage", handleSync);
+    return () => {
+      window.removeEventListener("kit-initiatives-change", handleSync);
+      window.removeEventListener("kit-submissions-change", handleSync);
+      window.removeEventListener("storage", handleSync);
+    };
+  }, [formId, loadForm, fetchSubmissionsFromServer]);
 
   // 3. Strict Target Cohort: Only students matching this form's course, year, stream, and section
   const relevantStudents = useMemo(() => {
@@ -362,80 +501,135 @@ export function FormStudentTrackerView({
     }
 
     const formKeys = [
-      String(form.id),
+      String(form.id || ""),
+      String(formId || ""),
       String(form.subjectCode || ""),
       String(form.code || ""),
-    ].filter(Boolean);
+    ]
+      .filter(Boolean)
+      .map((k) => k.toUpperCase().trim());
+
+    // Gather all candidate submissions from serverSubmissions and publicSubs
+    const candidateSubmissions: any[] = [
+      ...(Array.isArray(serverSubmissions) ? serverSubmissions : []),
+    ];
+
+    // Collect from publicSubs
+    for (const [key, list] of Object.entries(publicSubs)) {
+      if (Array.isArray(list)) {
+        const keyUpper = key.toUpperCase().trim();
+        const keyMatches = formKeys.some(
+          (fk) => fk === keyUpper || fk.includes(keyUpper) || keyUpper.includes(fk)
+        );
+        for (const sub of list) {
+          const subFormUpper = String(sub.formId || "").toUpperCase().trim();
+          const subMatches = formKeys.some(
+            (fk) => fk === subFormUpper || fk.includes(subFormUpper) || subFormUpper.includes(fk)
+          );
+          if (keyMatches || subMatches || !sub.formId) {
+            candidateSubmissions.push(sub);
+          }
+        }
+      }
+    }
 
     return relevantStudents.map((student) => {
       let submissionInfo: SubmissionInfo | null = null;
+      const sAfn = String(student.afn || "").trim().toUpperCase();
+      const sRoll = String(student.rollNumber || "").trim().toUpperCase();
+      const sEmail = String(student.email || "").trim().toLowerCase();
 
-      // Look in kit_public_submissions
-      for (const key of Object.keys(publicSubs)) {
-        const isMatchingFormKey = formKeys.some(
-          (fk) =>
-            fk.toUpperCase() === key.toUpperCase() ||
-            key.toUpperCase().includes(fk.toUpperCase()) ||
-            fk.toUpperCase().includes(key.toUpperCase())
-        );
+      // Check candidate submissions
+      for (const sub of candidateSubmissions) {
+        const leadAfn = String(
+          sub.student?.afn || sub.afn || sub.studentAfn || ""
+        ).trim().toUpperCase();
+        const leadRoll = String(
+          sub.student?.rollNumber || sub.rollNumber || sub.studentRoll || ""
+        ).trim().toUpperCase();
+        const leadEmail = String(
+          sub.student?.email || sub.email || sub.studentEmail || ""
+        ).trim().toLowerCase();
 
-        if (isMatchingFormKey && Array.isArray(publicSubs[key])) {
-          for (const sub of publicSubs[key]) {
-            // Check if student is lead
-            if (sub.student?.afn === student.afn) {
-              submissionInfo = {
-                formId: sub.formId,
-                projectName: sub.projectName,
-                projectDescription: sub.projectDescription,
-                registrationType: sub.registrationType,
-                submittedAt: sub.submittedAt,
-                verificationStatus: sub.verificationStatus || "verified",
-                isLead: true,
-                roleInTeam: "Team Lead",
-                teamMembers: sub.teamMembers,
-                leadStudent: sub.student,
-              };
-              break;
-            }
+        const isLead =
+          (sAfn && leadAfn === sAfn) ||
+          (sRoll && leadRoll === sRoll) ||
+          (sEmail && leadEmail === sEmail);
 
-            // Check if student is a team member
-            if (Array.isArray(sub.teamMembers)) {
-              const tm = sub.teamMembers.find((m: any) => m.afn === student.afn);
-              if (tm) {
-                submissionInfo = {
-                  formId: sub.formId,
-                  projectName: sub.projectName,
-                  projectDescription: sub.projectDescription,
-                  registrationType: sub.registrationType,
-                  submittedAt: sub.submittedAt,
-                  verificationStatus: sub.verificationStatus || "verified",
-                  isLead: false,
-                  roleInTeam: "Team Member",
-                  teamMembers: sub.teamMembers,
-                  leadStudent: sub.student,
-                };
-                break;
-              }
-            }
-          }
+        if (isLead) {
+          submissionInfo = {
+            formId: sub.formId,
+            projectName: sub.projectName || sub.projectTitle || sub.title,
+            projectDescription: sub.projectDescription || sub.description,
+            registrationType: sub.registrationType || "individual",
+            submittedAt: sub.submittedAt || sub.date || new Date().toISOString(),
+            verificationStatus: sub.verificationStatus || "verified",
+            isLead: true,
+            roleInTeam: "Team Lead",
+            teamMembers: sub.teamMembers,
+            leadStudent: sub.student,
+          };
+          break;
         }
-        if (submissionInfo) break;
+
+        // Check if student is a team member
+        const members = Array.isArray(sub.teamMembers)
+          ? sub.teamMembers
+          : Array.isArray(sub.members)
+          ? sub.members
+          : [];
+        const matchedMember = members.find((m: any) => {
+          const mAfn = String(m.afn || "").trim().toUpperCase();
+          const mRoll = String(m.rollNumber || m.rollNo || "").trim().toUpperCase();
+          const mEmail = String(m.email || "").trim().toLowerCase();
+          return (
+            (sAfn && mAfn === sAfn) ||
+            (sRoll && mRoll === sRoll) ||
+            (sEmail && mEmail === sEmail)
+          );
+        });
+
+        if (matchedMember) {
+          submissionInfo = {
+            formId: sub.formId,
+            projectName: sub.projectName || sub.projectTitle || sub.title,
+            projectDescription: sub.projectDescription || sub.description,
+            registrationType: sub.registrationType || "group",
+            submittedAt: sub.submittedAt || sub.date || new Date().toISOString(),
+            verificationStatus: sub.verificationStatus || "verified",
+            isLead: false,
+            roleInTeam: "Team Member",
+            teamMembers: sub.teamMembers || sub.members,
+            leadStudent: sub.student,
+          };
+          break;
+        }
       }
 
       // Fallback check in kit_student_form_submissions
       if (!submissionInfo) {
-        for (const fk of formKeys) {
+        for (const fk of Object.keys(studentSubs)) {
           const sub = studentSubs[fk];
-          if (sub && (sub.studentAfn === student.afn || sub.afn === student.afn)) {
-            submissionInfo = {
-              projectName: sub.projectName || sub.title,
-              projectDescription: sub.projectDescription || sub.description,
-              submittedAt: sub.submittedAt || sub.date,
-              registrationType: sub.registrationType || "individual",
-              isLead: true,
-              roleInTeam: "Individual / Lead",
-            };
-            break;
+          if (sub) {
+            const subLeadAfn = String(sub.studentAfn || sub.afn || "").trim().toUpperCase();
+            const subLeadRoll = String(sub.studentRoll || sub.rollNumber || "").trim().toUpperCase();
+            const subLeadEmail = String(sub.studentEmail || sub.email || "").trim().toLowerCase();
+
+            if (
+              (sAfn && subLeadAfn === sAfn) ||
+              (sRoll && subLeadRoll === sRoll) ||
+              (sEmail && subLeadEmail === sEmail)
+            ) {
+              submissionInfo = {
+                projectName: sub.projectName || sub.title,
+                projectDescription: sub.projectDescription || sub.description,
+                submittedAt: sub.submittedAt || sub.date || new Date().toISOString(),
+                registrationType: sub.registrationType || "individual",
+                isLead: true,
+                roleInTeam: "Individual / Lead",
+              };
+              break;
+            }
           }
         }
       }
@@ -446,7 +640,7 @@ export function FormStudentTrackerView({
         submission: submissionInfo,
       };
     });
-  }, [relevantStudents, form, isRefreshing]);
+  }, [relevantStudents, form, formId, isRefreshing, refreshTick, serverSubmissions]);
 
   // 5. Counts & Metrics
   const totalCount = studentsWithStatus.length;
@@ -532,18 +726,108 @@ export function FormStudentTrackerView({
   const endIndex = Math.min(currentPage * ROWS_PER_PAGE, filteredList.length);
 
   // 8. Refresh Handler
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
+    try {
+      loadForm();
+      const sSubs = await fetchSubmissionsFromServer();
+      setRefreshTick((prev) => prev + 1);
+      const regCount = sSubs.length;
+      showToast(
+        regCount > 0
+          ? `Roster refreshed (${regCount} registration${regCount > 1 ? "s" : ""} synced).`
+          : "Roster refreshed."
+      );
+    } catch {
       showToast("Roster refreshed.");
-    }, 400);
+    } finally {
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 400);
+    }
   };
 
-  // 9. CSV Export
+  // 9. Excel Spreadsheet Export (.xlsx)
+  const handleExportExcel = () => {
+    try {
+      const headers = [
+        "S.N.",
+        "Student Name",
+        "AFN",
+        "Roll Number",
+        "Email",
+        "Status",
+        "Approval",
+        "Project Title",
+        "Registration Type",
+        "Submitted Date",
+      ];
+
+      const dataRows = filteredList.map((s, idx) => [
+        idx + 1,
+        s.name,
+        String(s.afn),
+        String(s.rollNumber),
+        s.email,
+        s.isSubmitted ? "Registered" : "Pending",
+        s.isSubmitted ? (approvals[s.afn] === "approved" ? "Approved" : "Not Approved") : "-",
+        s.submission?.projectName || "-",
+        s.submission?.registrationType === "group"
+          ? `Group (${(s.submission.teamMembers?.length || 0) + 1})`
+          : s.isSubmitted
+          ? "Individual"
+          : "-",
+        s.submission?.submittedAt
+          ? new Date(s.submission.submittedAt).toLocaleDateString("en-IN")
+          : "-",
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Enforce text format on Roll Number and AFN so Excel never displays scientific notation
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:J1");
+      for (let R = 1; R <= range.e.r; ++R) {
+        const afnCell = ws[XLSX.utils.encode_cell({ r: R, c: 2 })];
+        if (afnCell) {
+          afnCell.t = "s";
+          afnCell.z = "@";
+        }
+        const rollCell = ws[XLSX.utils.encode_cell({ r: R, c: 3 })];
+        if (rollCell) {
+          rollCell.t = "s";
+          rollCell.z = "@";
+        }
+      }
+
+      // Column widths
+      ws["!cols"] = [
+        { wch: 8 },  // S.N.
+        { wch: 26 }, // Student Name
+        { wch: 12 }, // AFN
+        { wch: 20 }, // Roll Number
+        { wch: 28 }, // Email
+        { wch: 14 }, // Status
+        { wch: 16 }, // Approval
+        { wch: 34 }, // Project Title
+        { wch: 20 }, // Registration Type
+        { wch: 16 }, // Submitted Date
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Student Roster");
+
+      const fileName = `${form?.subjectCode || form?.id || "Form"}_Student_Roster_${new Date().toISOString().split("T")[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast("Downloaded Excel file (.xlsx)");
+    } catch {
+      showToast("Failed to export Excel file.", "warning");
+    }
+  };
+
+  // CSV Export with UTF-8 BOM and Excel text formula formatting
   const handleExportCSV = () => {
     const headers = [
-      "Sl No",
+      "S.N.",
       "Student Name",
       "AFN",
       "Roll Number",
@@ -557,21 +841,26 @@ export function FormStudentTrackerView({
 
     const rows = filteredList.map((s, idx) => [
       idx + 1,
-      `"${s.name}"`,
-      `"${s.afn}"`,
-      `"${s.rollNumber}"`,
+      `"${s.name.replace(/"/g, '""')}"`,
+      `="${s.afn}"`,
+      `="${s.rollNumber}"`,
       `"${s.email}"`,
       s.isSubmitted ? "Registered" : "Pending",
-      s.isSubmitted ? (approvals[s.afn] === "approved" ? "Approved" : "Not Approved") : "—",
-      `"${s.submission?.projectName || "—"}"`,
-      s.submission?.registrationType || (s.isSubmitted ? "Individual" : "—"),
+      s.isSubmitted ? (approvals[s.afn] === "approved" ? "Approved" : "Not Approved") : "-",
+      `"${(s.submission?.projectName || "-").replace(/"/g, '""')}"`,
+      s.submission?.registrationType === "group"
+        ? `Group (${(s.submission.teamMembers?.length || 0) + 1})`
+        : s.isSubmitted
+        ? "Individual"
+        : "-",
       s.submission?.submittedAt
         ? new Date(s.submission.submittedAt).toLocaleDateString("en-IN")
-        : "—",
+        : "-",
     ]);
 
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -580,6 +869,256 @@ export function FormStudentTrackerView({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    showToast("Downloaded CSV file (.csv)");
+  };
+
+  // PDF Export Dossier Handler
+  const handleExportPDF = () => {
+    try {
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        showToast("Pop-up blocked. Please allow pop-ups to generate PDF.", "warning");
+        return;
+      }
+      const dateStr = new Date().toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      const rowsHtml = studentsWithStatus
+        .map(
+          (s, idx) => `
+          <tr>
+            <td style="text-align: center; color: #64748b;">${idx + 1}</td>
+            <td style="font-weight: 600; color: #0f172a;">${s.name}</td>
+            <td style="font-family: monospace; color: #334155;">${s.afn}</td>
+            <td style="font-family: monospace; color: #475569;">${s.rollNumber}</td>
+            <td>
+              <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 9px; font-weight: 700; ${
+                s.isSubmitted
+                  ? "background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;"
+                  : "background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;"
+              }">
+                ${s.isSubmitted ? "Registered" : "Pending"}
+              </span>
+            </td>
+            <td style="font-weight: 500; color: #1e293b;">${s.submission?.projectName || "-"}</td>
+            <td style="color: #64748b; font-size: 10px;">${
+              s.submission?.registrationType === "group"
+                ? `Group (${(s.submission.teamMembers?.length || 0) + 1})`
+                : s.isSubmitted
+                ? "Individual"
+                : "-"
+            }</td>
+            <td>
+              ${
+                s.isSubmitted
+                  ? approvals[s.afn] === "approved"
+                    ? '<span style="color: #15803d; font-weight: 700;">Approved</span>'
+                    : '<span style="color: #b45309; font-weight: 600;">Not Approved</span>'
+                  : '<span style="color: #94a3b8;">-</span>'
+              }
+            </td>
+          </tr>
+        `
+        )
+        .join("");
+
+      const docHtml = `
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <title>${formSubjectCode} - Registration Roster (${formTitle})</title>
+            <style>
+              @page { size: A4 landscape; margin: 14mm 12mm; }
+              * { box-sizing: border-box; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                margin: 0;
+                padding: 16px;
+                color: #0f172a;
+                font-size: 10.5px;
+                line-height: 1.4;
+              }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                border-bottom: 2px solid #0D3481;
+                padding-bottom: 12px;
+                margin-bottom: 14px;
+              }
+              .org-name {
+                font-size: 18px;
+                font-weight: 800;
+                color: #0D3481;
+                letter-spacing: -0.3px;
+                margin: 0 0 2px 0;
+              }
+              .org-sub {
+                font-size: 11px;
+                font-weight: 600;
+                color: #475569;
+                margin: 0;
+              }
+              .meta-badge-box {
+                text-align: right;
+              }
+              .form-code {
+                font-size: 13px;
+                font-weight: 800;
+                color: #0D3481;
+                font-family: monospace;
+              }
+              .form-title {
+                font-size: 11px;
+                color: #334155;
+                font-weight: 600;
+              }
+              .gen-date {
+                font-size: 9px;
+                color: #94a3b8;
+                margin-top: 2px;
+              }
+              .summary-bar {
+                display: flex;
+                gap: 16px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px 14px;
+                margin-bottom: 14px;
+                font-size: 10px;
+              }
+              .summary-item {
+                display: flex;
+                flex-direction: column;
+              }
+              .summary-item .label {
+                font-size: 8.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #64748b;
+                font-weight: 700;
+              }
+              .summary-item .val {
+                font-weight: 700;
+                color: #0f172a;
+                margin-top: 1px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 6px;
+              }
+              th {
+                background: #0D3481;
+                color: #ffffff;
+                text-align: left;
+                padding: 7px 8px;
+                font-size: 9.5px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+              }
+              td {
+                padding: 6px 8px;
+                border-bottom: 1px solid #f1f5f9;
+                font-size: 10px;
+              }
+              tr:nth-child(even) td {
+                background: #f8fafc;
+              }
+              .footer {
+                margin-top: 20px;
+                padding-top: 8px;
+                border-top: 1px solid #e2e8f0;
+                display: flex;
+                justify-content: space-between;
+                font-size: 9px;
+                color: #94a3b8;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div>
+                <h1 class="org-name">Kanpur Institute of Technology</h1>
+                <p class="org-sub">Department of Computer Science &amp; Engineering &bull; Student Project Registration Dossier</p>
+              </div>
+              <div class="meta-badge-box">
+                <div class="form-code">${formSubjectCode} &bull; ${formTitle}</div>
+                <div class="form-title">Section ${form.section || "A"} &bull; ${form.year || "4th Year"} (${form.course || "B.Tech"})</div>
+                <div class="gen-date">Generated: ${dateStr}</div>
+              </div>
+            </div>
+
+            <div class="summary-bar">
+              <div class="summary-item">
+                <span class="label">Coordinator</span>
+                <span class="val">${form.coordinator?.name || form.publishedBy || "Rahul Singh (HOD)"}</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Eligible Cohort</span>
+                <span class="val">${totalCount} Students</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Registered</span>
+                <span class="val" style="color: #15803d;">${registeredCount} (${totalCount > 0 ? Math.round((registeredCount / totalCount) * 100) : 0}%)</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Pending</span>
+                <span class="val" style="color: #b45309;">${pendingCount}</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Approved</span>
+                <span class="val" style="color: #15803d;">${approvedCount}</span>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 38px; text-align: center;">S.N.</th>
+                  <th>Student Name</th>
+                  <th>AFN</th>
+                  <th>Roll Number</th>
+                  <th>Status</th>
+                  <th>Registered Project</th>
+                  <th>Type</th>
+                  <th>Approval</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+
+            <div class="footer">
+              <span>projects.kit &bull; Official Departmental Registration Record</span>
+              <span>Confidential &bull; Authorized Academic Record</span>
+            </div>
+
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  window.print();
+                }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.open();
+      printWindow.document.write(docHtml);
+      printWindow.document.close();
+      showToast("Opened printable PDF report.");
+    } catch {
+      showToast("Failed to open PDF report.", "warning");
+    }
   };
 
   // Selection helpers
@@ -617,23 +1156,280 @@ export function FormStudentTrackerView({
     setSelectedAfns(new Set());
   };
 
-  // Reminder actions
-  const handleRemindPendingCohort = () => {
-    if (pendingCount === 0) {
-      showToast("All students have registered their proposals!");
+  // Relative time helper
+  const formatRelativeTime = (dateString: string | null): string => {
+    if (!dateString) return "";
+    const diffMs = Date.now() - new Date(dateString).getTime();
+    if (diffMs < 0 || diffMs < 60 * 1000) return "Just now";
+    const diffMins = Math.floor(diffMs / (60 * 1000));
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  // Copy pending student emails to clipboard fallback
+  const handleCopyPendingEmails = async () => {
+    const pendingCohort = relevantStudents.filter(
+      (s) => !studentsWithStatus.find((st) => st.afn === s.afn)?.isSubmitted
+    );
+    const emails = pendingCohort
+      .map((s) => s.email || `${s.afn}@kit.ac.in`)
+      .filter(Boolean)
+      .join(", ");
+
+    if (!emails) {
+      showToast("No pending student emails to copy.", "info");
       return;
     }
-    showToast(`Reminder dispatched to all ${pendingCount} pending students via institutional email.`);
+
+    try {
+      await navigator.clipboard.writeText(emails);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+      showToast(`Copied ${pendingCohort.length} pending emails to clipboard.`);
+    } catch {
+      showToast("Failed to copy emails to clipboard.", "warning");
+    }
   };
 
-  const handleSendReminderSelected = () => {
-    if (selectedAfns.size === 0) return;
-    showToast(`Reminder sent to ${selectedAfns.size} selected students.`);
-    setSelectedAfns(new Set());
+  // Helper to generate default template
+  const generateDefaultDraft = (targetForm: any) => {
+    const pName =
+      targetForm?.title ||
+      targetForm?.customProjectName ||
+      "Mini Project Registration";
+    const sCode = targetForm?.subjectCode || "BCS751";
+    const lastDate = targetForm?.deadline
+      ? new Date(targetForm.deadline).toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : "21 Oct 2026";
+    const regLink =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "http://localhost:3000";
+    const coordName =
+      session?.name || targetForm?.coordinator?.name || "Rahul Singh (HOD)";
+
+    const subject = `[Important Reminder] Registration Deadline for ${pName} (${sCode})`;
+
+    const body = `<p>Dear Students,</p>
+<p>This is an important reminder that the registration deadline for <strong>${pName}</strong> is approaching soon. All students are required to complete their registration before the stipulated deadline.</p>
+<p><strong>Registration Details:</strong></p>
+<ul>
+  <li><strong>Project Name:</strong> ${pName}</li>
+  <li><strong>Subject Code (Sub Code):</strong> ${sCode}</li>
+  <li><strong>Last Date to Register:</strong> <span style="color: #b91c1c; font-weight: bold;">${lastDate}</span></li>
+  <li><strong>Registration Link:</strong> <a href="${regLink}" target="_blank" style="color: #1e5bd8; text-decoration: underline;">${regLink}</a></li>
+</ul>
+<div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px; margin: 16px 0; color: #78350f;">
+  <strong>Important Notice:</strong> Registration is mandatory for all students. Failure to register before the deadline will be the sole responsibility of the student. The department will not be liable for any requests for assistance or exceptions arising from failure to complete the registration within the stipulated timeline.
+</div>
+<p>All students are advised to complete the registration process at the earliest to avoid any last-minute issues.</p>
+<p style="margin-top: 24px; color: #475569;">
+  Regards,<br>
+  <strong>${coordName}</strong><br>
+  Department of Computer Science &amp; Engineering<br>
+  Kanpur Institute of Technology
+</p>`;
+
+    return { subject, body };
   };
 
-  const handleRemindSingleStudent = (st: StudentWithStatus) => {
-    showToast(`Reminder sent to ${st.name} (${st.email || st.afn + "@kit.ac.in"}).`);
+  // Open modal with targeted cohort and prefilled editable draft
+  const handleOpenRemindModal = (targets?: StudentRecord[]) => {
+    let resolvedTargets: StudentRecord[] = [];
+    if (targets && targets.length > 0) {
+      resolvedTargets = targets;
+    } else {
+      const pendingCohort = relevantStudents.filter(
+        (s) => !studentsWithStatus.find((st) => st.afn === s.afn)?.isSubmitted
+      );
+      if (pendingCohort.length === 0) {
+        showToast("All students have completed their project registration!", "info");
+        return;
+      }
+      resolvedTargets = pendingCohort;
+    }
+
+    setRemindTargetStudents(resolvedTargets);
+    const { subject, body } = generateDefaultDraft(form);
+    setDraftSubject(subject);
+    setDraftBody(body);
+    setRecipientSearch("");
+    setNewRecipientEmail("");
+    setNewRecipientName("");
+    setActiveModalTab("compose");
+    setIsRemindModalOpen(true);
+  };
+
+  // Add custom or test email recipient to active dispatch
+  const handleAddRecipient = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const rawEmail = newRecipientEmail.trim();
+    if (!rawEmail) {
+      showToast("Please enter an email address.", "warning");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(rawEmail)) {
+      showToast("Please enter a valid email address (e.g. muditcodes@gmail.com).", "warning");
+      return;
+    }
+
+    const cleanEmail = rawEmail.toLowerCase();
+    const alreadyExists = remindTargetStudents.some(
+      (s) => s.email.toLowerCase() === cleanEmail
+    );
+    if (alreadyExists) {
+      showToast(`${cleanEmail} is already in the recipient list.`, "info");
+      return;
+    }
+
+    const name = newRecipientName.trim() || cleanEmail.split("@")[0];
+    const newEntry: StudentRecord = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` as any,
+      name: name,
+      email: cleanEmail,
+      afn: "CUSTOM",
+      rollNumber: "TEST",
+      year: form?.year || "4th Year",
+      batch: "2023-2027",
+      course: form?.course || "B.Tech",
+      section: form?.section || "A",
+      stream: form?.stream || "CSE",
+      gender: "N/A",
+    };
+
+    setRemindTargetStudents((prev) => [newEntry, ...prev]);
+    setNewRecipientEmail("");
+    setNewRecipientName("");
+    showToast(`Added ${cleanEmail} to recipient list.`);
+  };
+
+  // Remove recipient from current modal dispatch
+  const handleRemoveRecipient = (id: string | number) => {
+    setRemindTargetStudents((prev) => prev.filter((s) => String(s.id) !== String(id)));
+    showToast("Recipient removed from reminder dispatch.");
+  };
+
+  // Clear all recipients to allow testing single email
+  const handleClearAllRecipients = () => {
+    setWarningDialog({
+      type: "clear_recipients",
+    });
+  };
+
+  // Reset to original pending cohort
+  const handleResetRecipientsToDefault = () => {
+    const pendingCohort = relevantStudents.filter(
+      (s) => !studentsWithStatus.find((st) => st.afn === s.afn)?.isSubmitted
+    );
+    setRemindTargetStudents(pendingCohort);
+    showToast(`Reset recipient list to ${pendingCohort.length} pending cohort students.`);
+  };
+
+  // Copy recipient emails from within the modal
+  const handleCopyModalRecipients = async () => {
+    const emails = remindTargetStudents
+      .map((s) => s.email || `${s.afn}@kit.ac.in`)
+      .filter(Boolean)
+      .join(", ");
+
+    if (!emails) return;
+    try {
+      await navigator.clipboard.writeText(emails);
+      setModalCopySuccess(true);
+      setTimeout(() => setModalCopySuccess(false), 2000);
+      showToast(`Copied ${remindTargetStudents.length} recipient emails to clipboard.`);
+    } catch {}
+  };
+
+  // Execute reminder dispatch via API route with verified draft
+  const handleConfirmDispatchReminders = async () => {
+    if (remindTargetStudents.length === 0) {
+      showToast("Please add at least one recipient before sending.", "warning");
+      return;
+    }
+    setIsSendingReminders(true);
+
+    try {
+      const targetFormKey = form?.id || form?.subjectCode || formId;
+
+      const studentIds = remindTargetStudents
+        .filter((s) => !String(s.id).startsWith("custom-"))
+        .map((s) => String(s.id));
+
+      const customRecipients = remindTargetStudents
+        .filter((s) => String(s.id).startsWith("custom-"))
+        .map((s) => ({ email: s.email, name: s.name }));
+
+      const res = await fetch(`/api/forms/${encodeURIComponent(targetFormKey)}/remind`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentIds,
+          customRecipients,
+          customSubject: draftSubject,
+          customBody: draftBody,
+          formMeta: form
+            ? {
+                id: form.id || formId,
+                subjectCode: form.subjectCode || "BCS751",
+                title: form.title || form.customProjectName || "Mini Project",
+                course: form.course || "B.Tech",
+                stream: form.stream || "Computer Science & Engineering",
+                year: form.year || "4th Year",
+                section: form.section || "A",
+                deadline: form.deadline || "2026-10-21",
+                status: form.status || "Active",
+                coordinator: form.coordinator || {
+                  name: session?.name || "Rahul Singh",
+                  email: session?.email || "muditcodes@gmail.com",
+                  role: session?.role || "HOD",
+                },
+              }
+            : undefined,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to dispatch reminders.");
+      }
+
+      setIsRemindModalOpen(false);
+      if (data.lastSentAt) {
+        setLastRemindedAt(data.lastSentAt);
+      }
+      if (selectedAfns.size > 0) {
+        setSelectedAfns(new Set());
+      }
+
+      if (data.sent > 0) {
+        showToast(
+          `Dispatched ${data.sent} reminder email${data.sent > 1 ? "s" : ""}.` +
+            (data.skipped > 0 ? ` (${data.skipped} skipped: 24h cooldown active)` : "")
+        );
+      } else if (data.skipped > 0) {
+        showToast(
+          data.message || "All targeted cohort students received a reminder within the last 24 hours.",
+          "info"
+        );
+      } else {
+        showToast(data.message || "No reminders were dispatched.", "info");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Network error while sending reminders.", "warning");
+    } finally {
+      setIsSendingReminders(false);
+    }
   };
 
   // Extend deadline save
@@ -698,68 +1494,22 @@ export function FormStudentTrackerView({
 
   return (
     <div className="w-full flex-1 flex flex-col space-y-5 pb-8 animate-in fade-in duration-200">
-      {/* ─── NAVIGATION TOP BAR (LAYOUT 1) ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-          <Link
-            href={backHref}
-            className="text-slate-800 hover:text-[#0D3481] transition-colors flex items-center gap-1 font-bold"
-          >
-            <span>&larr;</span>
-            <span className="underline underline-offset-2">Published Forms</span>
-          </Link>
-          <span className="text-slate-300">/</span>
-          <span className="font-mono text-slate-500">{formSubjectCode}</span>
-          <span className="text-slate-300">/</span>
-          <span className="font-bold text-slate-900">Student Submissions</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {registeredCount > 0 && (
-            <button
-              type="button"
-              onClick={handleClearSubmissions}
-              className="px-3.5 py-1.5 rounded-xl border border-red-200 bg-white hover:bg-red-50 text-red-600 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-              title="Reset all submissions for this form"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Reset Submissions</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="px-4 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-          >
-            <RotateCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshing ? "animate-spin" : ""}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="px-4 py-1.5 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ─── FORM DETAILS HERO BANNER (LAYOUT 1) ─── */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs relative overflow-hidden">
+      {/* ─── FORM DETAILS HERO BANNER ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs relative z-20 overflow-visible">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Left Block */}
           <div className="space-y-2 max-w-xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-[#0D3481] bg-blue-50/80 px-2.5 py-0.5 rounded-md border border-blue-200/70">
+              <span className="text-xs font-mono font-extrabold text-[#0D3481] bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200/70">
                 {formSubjectCode}
               </span>
               <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
+                Student Submissions
+              </span>
+              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
                 {form.stream === "Computer Science & Engineering" ? "CSE" : form.stream || "CSE"}
               </span>
-              <span className="text-xs font-bold text-[#0D3481] bg-blue-50/80 px-2.5 py-0.5 rounded-md border border-blue-200/70">
+              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
                 {form.course} · {form.year}
               </span>
               <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
@@ -807,20 +1557,117 @@ export function FormStudentTrackerView({
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2 pt-1 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 pt-1 w-full sm:w-auto justify-end">
+              {lastRemindedAt && (
+                <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5 mr-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/80">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  <span>Last reminded {formatRelativeTime(lastRemindedAt)}</span>
+                </span>
+              )}
+
+              {/* Refresh Button replacing copy emails */}
+              <button
+                type="button"
+                onClick={handleRefresh}
+                title="Refresh roster"
+                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-[#0D3481] font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshing ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </button>
+
+              {/* Download Record Dropdown Button (PDF or Sheet) */}
+              <div className="relative z-30" ref={downloadMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-[#0D3481] font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"
+                  title="Download registration records"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Download Record</span>
+                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isDownloadMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {isDownloadMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-slate-200/90 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                      Select Format
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDownloadMenuOpen(false);
+                        handleExportPDF();
+                      }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-[#0D3481] flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                      <div>
+                        <div className="font-bold">PDF Document</div>
+                        <div className="text-[10px] text-slate-400 font-normal">Formatted print dossier</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDownloadMenuOpen(false);
+                        handleExportExcel();
+                      }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <div className="font-bold">Excel Sheet (.xlsx)</div>
+                        <div className="text-[10px] text-slate-400 font-normal">Native Excel workbook</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsExtendModalOpen(true)}
-                className="flex-1 sm:flex-initial px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer text-center"
+                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer text-center"
               >
                 Extend deadline
               </button>
+
               <button
                 type="button"
-                onClick={handleRemindPendingCohort}
-                className="flex-1 sm:flex-initial px-5 py-2 rounded-xl bg-[#0B2545] hover:bg-[#071930] text-white font-bold text-xs transition-all shadow-xs hover:shadow-md cursor-pointer text-center"
+                onClick={() => setIsFormSettingsOpen(true)}
+                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-[#0D3481] hover:border-[#0D3481]/30 font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer flex items-center gap-1.5"
+                title="Form Settings: Final Submission, Presentations, Danger Zone"
               >
-                Remind {pendingCount} pending
+                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                <span>Settings</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={pendingCount === 0 && selectedAfns.size === 0}
+                onClick={() => {
+                  if (selectedAfns.size > 0) {
+                    const selectedStudents = relevantStudents.filter((s) => selectedAfns.has(s.afn));
+                    handleOpenRemindModal(selectedStudents);
+                  } else {
+                    handleOpenRemindModal();
+                  }
+                }}
+                className={`px-5 py-2 rounded-xl font-bold text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 ${
+                  pendingCount === 0 && selectedAfns.size === 0
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                    : "bg-[#0B2545] hover:bg-[#071930] text-white hover:shadow-md cursor-pointer"
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>
+                  {selectedAfns.size > 0
+                    ? `Remind ${selectedAfns.size} selected`
+                    : `Remind ${pendingCount} pending`}
+                </span>
               </button>
             </div>
           </div>
@@ -973,7 +1820,10 @@ export function FormStudentTrackerView({
             </span>
             <button
               type="button"
-              onClick={handleSendReminderSelected}
+              onClick={() => {
+                const selectedStudents = relevantStudents.filter((s) => selectedAfns.has(s.afn));
+                handleOpenRemindModal(selectedStudents);
+              }}
               className="px-3.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Bell className="w-3 h-3 text-[#0D3481]" />
@@ -1053,18 +1903,7 @@ export function FormStudentTrackerView({
                   return (
                     <tr
                       key={st.id}
-                      onClick={() => {
-                        // Click anywhere in row opens registered form preview
-                        if (st.isSubmitted && st.submission) {
-                          setSelectedSubmission({
-                            student: st,
-                            submission: st.submission,
-                          });
-                        } else {
-                          showToast(`${st.name} has not registered a project proposal yet (Status: Pending).`, "warning");
-                        }
-                      }}
-                      className={`group/row transition-colors cursor-pointer border-b border-slate-100 ${
+                      className={`group/row transition-colors border-b border-slate-100 ${
                         isSelected ? "bg-blue-50/50" : "hover:bg-slate-50/80 bg-white"
                       }`}
                     >
@@ -1126,7 +1965,7 @@ export function FormStudentTrackerView({
                         )}
                       </td>
 
-                      {/* Project Proposal */}
+                      {/* Project Details */}
                       <td className="py-3.5 px-4">
                         {st.isSubmitted && st.submission?.projectName ? (
                           <div>
@@ -1164,18 +2003,38 @@ export function FormStudentTrackerView({
                         )}
                       </td>
 
-                      {/* Action Button: Remind */}
+                      {/* Action: View Button */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemindSingleStudent(st);
-                          }}
-                          className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer"
-                        >
-                          Remind
-                        </button>
+                        {st.isSubmitted && st.submission ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSubmission({
+                                student: st,
+                                submission: st.submission!,
+                              });
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-[#0D3481] hover:border-[#0D3481]/30 font-bold text-xs transition-all shadow-2xs hover:shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+                            title="View Registration Details"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-500" />
+                            <span>View</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              showToast(`${st.name} has not registered yet (Status: Pending).`, "info");
+                            }}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200/70 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 font-medium text-xs transition-all cursor-pointer inline-flex items-center gap-1.5"
+                            title="Registration pending — click to check status"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-400" />
+                            <span>View</span>
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1217,7 +2076,7 @@ export function FormStudentTrackerView({
         </div>
       </div>
 
-      {/* ─── PROPOSAL DETAILS SUB-MODAL ─── */}
+      {/* ─── REGISTRATION DETAILS SUB-MODAL ─── */}
       {selectedSubmission && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] overflow-y-auto">
@@ -1228,7 +2087,7 @@ export function FormStudentTrackerView({
                   Verified Submission
                 </span>
                 <h3 className="text-base font-extrabold text-[#10334A] mt-2 leading-snug">
-                  {selectedSubmission.submission.projectName || "Project Proposal"}
+                  {selectedSubmission.submission.projectName || "Project Registration"}
                 </h3>
               </div>
               <button
@@ -1265,7 +2124,7 @@ export function FormStudentTrackerView({
                   className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Approve Proposal</span>
+                  <span>Approve Registration</span>
                 </button>
               )}
             </div>
@@ -1342,15 +2201,16 @@ export function FormStudentTrackerView({
               <button
                 type="button"
                 onClick={() =>
-                  handleRemoveSingleSubmission(
+                  promptRemoveSingleSubmission(
                     selectedSubmission.student,
-                    selectedSubmission.submission.projectName
+                    selectedSubmission.submission.projectName,
+                    selectedSubmission.submission.teamMembers
                   )
                 }
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Remove Proposal & Set to Pending</span>
+                <span>Remove Registration & Set to Pending</span>
               </button>
 
               <button
@@ -1413,6 +2273,717 @@ export function FormStudentTrackerView({
           </div>
         </div>
       )}
+
+      {/* ─── REMIND REVIEW & DRAFT VERIFICATION MODAL ─── */}
+      {isRemindModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remind-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-in fade-in duration-150"
+        >
+          <div className="bg-white rounded-2xl max-w-2xl sm:max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#0D3481]/10 border border-[#0D3481]/20 flex items-center justify-center text-[#0D3481]">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="remind-modal-title" className="text-base font-extrabold text-[#10334A]">
+                    Review &amp; Dispatch Reminder Email
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {form?.subjectCode || "BCS751"} · Section {form?.section || "A"} ({remindTargetStudents.length} pending recipient{remindTargetStudents.length !== 1 ? "s" : ""})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isSendingReminders}
+                onClick={() => setIsRemindModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-1 px-6 pt-3 border-b border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={() => setActiveModalTab("compose")}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeModalTab === "compose"
+                    ? "border-[#0D3481] text-[#0D3481]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Draft</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModalTab("recipients")}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeModalTab === "recipients"
+                    ? "border-[#0D3481] text-[#0D3481]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Recipients ({remindTargetStudents.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModalTab("preview")}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeModalTab === "preview"
+                    ? "border-[#0D3481] text-[#0D3481]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Email Preview</span>
+              </button>
+            </div>
+
+            {/* Modal Body / Tab Contents */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {/* TAB 1: COMPOSE / GMAIL-STYLE RICH DRAFT EDITOR */}
+              {activeModalTab === "compose" && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <GmailRichEditor
+                    initialSubject={draftSubject}
+                    initialHtml={draftBody}
+                    recipientCount={remindTargetStudents.length}
+                    recipientEmails={remindTargetStudents.map((s) => s.email || `${s.afn}@kit.ac.in`)}
+                    formMeta={{
+                      projectName: form?.title || form?.customProjectName || "Mini Project",
+                      subjectCode: form?.subjectCode || "BCS751",
+                      deadline: form?.deadline
+                        ? new Date(form.deadline).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "21 Oct 2026",
+                      registrationLink:
+                        typeof window !== "undefined"
+                          ? window.location.origin
+                          : "http://localhost:3000",
+                      coordinatorName:
+                        session?.name || form?.coordinator?.name || "Rahul Singh (HOD)",
+                      departmentName: "Department of Computer Science & Engineering",
+                      collegeName: "Kanpur Institute of Technology",
+                    }}
+                    onSubjectChange={(val) => setDraftSubject(val)}
+                    onHtmlChange={(html) => setDraftBody(html)}
+                    onResetDefault={() => {
+                      const { subject, body } = generateDefaultDraft(form);
+                      setDraftSubject(subject);
+                      setDraftBody(body);
+                      showToast("Restored official default reminder template.");
+                    }}
+                    onSend={handleConfirmDispatchReminders}
+                    onDiscard={() => setIsRemindModalOpen(false)}
+                    onViewRecipients={() => setActiveModalTab("recipients")}
+                    isSending={isSendingReminders}
+                  />
+                </div>
+              )}
+
+              {/* TAB 2: RECIPIENTS LIST (WITH ADD / REMOVE / BULK CONTROLS) */}
+              {activeModalTab === "recipients" && (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  {/* Add Custom / Test Email Card */}
+                  <div className="bg-blue-50/50 border border-blue-200/70 rounded-2xl p-4 shadow-2xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <UserPlus className="w-4 h-4 text-[#0D3481]" />
+                        <span>Add Recipient (e.g. Test Email or Custom Recipient)</span>
+                      </label>
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Cooldown Bypass on Custom Emails
+                      </span>
+                    </div>
+
+                    <form
+                      onSubmit={handleAddRecipient}
+                      className="flex flex-col sm:flex-row items-stretch gap-2"
+                    >
+                      <input
+                        type="email"
+                        placeholder="Email address (e.g. muditcodes@gmail.com)..."
+                        value={newRecipientEmail}
+                        onChange={(e) => setNewRecipientEmail(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Name (optional)..."
+                        value={newRecipientName}
+                        onChange={(e) => setNewRecipientName(e.target.value)}
+                        className="w-full sm:w-44 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-[#071930] text-white font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-2xs"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>+ Add Recipient</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Filter and Quick Actions Bar */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Filter by name, email, roll number, or AFN..."
+                        value={recipientSearch}
+                        onChange={(e) => setRecipientSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] transition-all"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleResetRecipientsToDefault}
+                        title="Restore default pending cohort (60 students)"
+                        className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3 text-[#0D3481]" />
+                        <span>Reset (60)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClearAllRecipients}
+                        title="Clear all recipients to test with a single email"
+                        className="px-2.5 py-2 rounded-xl border border-rose-200 bg-rose-50/60 hover:bg-rose-100/70 text-rose-700 font-bold text-[11px] transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Clear All</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyModalRecipients}
+                        className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        {modalCopySuccess ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copy All ({remindTargetStudents.length})</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Summary Bar */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 font-medium">
+                    <span>
+                      {remindTargetStudents.length} total recipient{remindTargetStudents.length !== 1 ? "s" : ""}{" "}
+                      ({remindTargetStudents.filter((s) => !String(s.id).startsWith("custom-")).length} cohort pending,{" "}
+                      {remindTargetStudents.filter((s) => String(s.id).startsWith("custom-")).length} custom added)
+                    </span>
+                    {recipientSearch && (
+                      <span className="text-slate-400">Filtered by &quot;{recipientSearch}&quot;</span>
+                    )}
+                  </div>
+
+                  {/* Scrollable Recipient Roster */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[320px] overflow-y-auto divide-y divide-slate-100 bg-white shadow-2xs">
+                    {remindTargetStudents
+                      .filter((s) => {
+                        if (!recipientSearch.trim()) return true;
+                        const q = recipientSearch.toLowerCase();
+                        return (
+                          s.name.toLowerCase().includes(q) ||
+                          s.email.toLowerCase().includes(q) ||
+                          (s.afn && s.afn.toLowerCase().includes(q)) ||
+                          (s.rollNumber && s.rollNumber.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((student, idx) => {
+                        const isCustom = String(student.id).startsWith("custom-");
+                        return (
+                          <div
+                            key={String(student.id)}
+                            className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="font-mono text-[11px] text-slate-400 w-6 text-right shrink-0">
+                                {idx + 1}.
+                              </span>
+                              <div className="min-w-0">
+                                <div className="font-bold text-xs text-slate-900 truncate flex items-center gap-1.5">
+                                  <span>{student.name}</span>
+                                  {isCustom && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                      Custom / Test
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="font-mono text-[11px] text-slate-500 truncate">
+                                  {isCustom
+                                    ? "Test Recipient"
+                                    : `AFN: ${student.afn} · Roll: ${student.rollNumber}`}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono text-xs text-[#0D3481] bg-blue-50/80 px-2.5 py-1 rounded-md border border-blue-200/60 font-semibold">
+                                {student.email || `${student.afn}@kit.ac.in`}
+                              </span>
+                              {!isCustom ? (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                  Pending
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRecipient(student.id)}
+                                title={`Remove ${student.name} from recipient list`}
+                                className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                    {remindTargetStudents.length === 0 && (
+                      <div className="py-12 text-center space-y-2">
+                        <Users className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-xs font-semibold text-slate-600">No recipients in list.</p>
+                        <p className="text-[11px] text-slate-400">
+                          Add a test email above or click &quot;Reset (60)&quot; to restore all pending cohort students.
+                        </p>
+                      </div>
+                    )}
+
+                    {remindTargetStudents.length > 0 &&
+                      remindTargetStudents.filter((s) => {
+                        if (!recipientSearch.trim()) return true;
+                        const q = recipientSearch.toLowerCase();
+                        return (
+                          s.name.toLowerCase().includes(q) ||
+                          s.email.toLowerCase().includes(q) ||
+                          (s.afn && s.afn.toLowerCase().includes(q)) ||
+                          (s.rollNumber && s.rollNumber.toLowerCase().includes(q))
+                        );
+                      }).length === 0 && (
+                        <div className="py-12 text-center text-xs text-slate-400">
+                          No recipient matches &quot;{recipientSearch}&quot;
+                        </div>
+                      )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: LIVE FORMATTED PREVIEW */}
+              {activeModalTab === "preview" && (
+                <div className="space-y-3 animate-in fade-in duration-150">
+                  <div className="bg-slate-100/70 p-3 rounded-xl text-xs space-y-1 text-slate-600 border border-slate-200">
+                    <div>
+                      <strong className="text-slate-800">Subject:</strong> {draftSubject}
+                    </div>
+                    <div>
+                      <strong className="text-slate-800">From:</strong> KIT Department of CSE &lt;{session?.email || "muditcodes@gmail.com"}&gt;
+                    </div>
+                    <div>
+                      <strong className="text-slate-800">BCC:</strong> {remindTargetStudents.length} recipient addresses (hidden from each other)
+                    </div>
+                  </div>
+
+                  {/* Rendered Email Card Container */}
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div className="bg-[#0A2A5E] px-6 py-4 text-white border-b-2 border-[#F59E0B]">
+                      <p className="text-[10px] uppercase font-bold tracking-wider text-slate-300">
+                        Department of Computer Science &amp; Engineering
+                      </p>
+                      <h4 className="text-base font-extrabold tracking-tight">
+                        Kanpur Institute of Technology
+                      </h4>
+                    </div>
+
+                    <div
+                      className="p-6 text-xs text-slate-700 leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2 [&_a]:text-[#1E5BD8] [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-amber-400 [&_blockquote]:bg-amber-50/70 [&_blockquote]:py-2 [&_blockquote]:px-3 [&_blockquote]:rounded-r-lg"
+                      dangerouslySetInnerHTML={{ __html: draftBody }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Security & Cooldown Info Banner */}
+              <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-3 flex items-start gap-2.5 text-[11px] text-slate-700">
+                <AlertCircle className="w-4 h-4 text-[#0D3481] shrink-0 mt-0.5" />
+                <p>
+                  <strong>Privacy &amp; Sent-Folder Protection:</strong> Emails are sent via <strong>BCC</strong> so only 1 email appears in the HOD Sent Box, and students cannot see each other&apos;s addresses. Students who already received a reminder in the last 24 hours will be automatically skipped by the cooldown policy.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <span className="text-xs font-semibold text-slate-500 font-mono">
+                {remindTargetStudents.length} target recipient{remindTargetStudents.length !== 1 ? "s" : ""}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSendingReminders}
+                  onClick={() => setIsRemindModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSendingReminders || remindTargetStudents.length === 0}
+                  onClick={handleConfirmDispatchReminders}
+                  className="px-5 py-2 rounded-xl bg-[#0B2545] hover:bg-[#071930] text-white font-bold text-xs transition-all shadow-xs hover:shadow-md disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                >
+                  {isSendingReminders ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending reminders...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send to {remindTargetStudents.length} Students</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── WARNING CONFIRMATION POP-UP CARD ─── */}
+      {warningDialog && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setWarningDialog(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          {warningDialog.type === "remove_single" && (
+            <div
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200/90 shadow-2xl p-6 sm:p-7 space-y-4 animate-in zoom-in-95 duration-150 text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Close Button */}
+              <button
+                type="button"
+                onClick={() => setWarningDialog(null)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Warning Header */}
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+                </div>
+                <div className="space-y-1 pr-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
+                      Warning
+                    </span>
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Status Reversion
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-[#10334A] leading-snug">
+                    Remove Registration?
+                  </h3>
+                </div>
+              </div>
+
+              {/* Message */}
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Are you sure you want to remove the registration for{" "}
+                <strong className="text-slate-900 font-bold">
+                  &ldquo;{warningDialog.projectName || "this project"}&rdquo;
+                </strong>{" "}
+                and set status back to{" "}
+                <span className="inline-block px-1.5 py-0.5 rounded font-bold text-amber-700 bg-amber-50 border border-amber-200">
+                  Pending
+                </span>
+                ?
+              </p>
+
+              {/* Student Details Card */}
+              <div className="bg-slate-50/90 border border-slate-200/90 rounded-xl p-3.5 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Lead Student
+                    </span>
+                    <span className="font-extrabold text-slate-800">
+                      {warningDialog.student.name}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      AFN
+                    </span>
+                    <span className="font-mono text-slate-600 font-bold">
+                      {warningDialog.student.afn}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status Transition indicator */}
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-medium">Status Change:</span>
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      Submitted
+                    </span>
+                    <span className="text-slate-400 font-mono">→</span>
+                    <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                      Pending
+                    </span>
+                  </div>
+                </div>
+
+                {/* Team Members note if any */}
+                {warningDialog.teamMembers && warningDialog.teamMembers.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <div className="flex items-center gap-1.5 text-amber-800 font-bold text-[11px] mb-1.5">
+                      <Users className="w-3.5 h-3.5 text-amber-600" />
+                      <span>
+                        {warningDialog.teamMembers.length} team member
+                        {warningDialog.teamMembers.length > 1 ? "s" : ""} also affected:
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {warningDialog.teamMembers.map((m, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-medium text-slate-700 shadow-2xs"
+                        >
+                          <User className="w-2.5 h-2.5 text-slate-400" />
+                          <span className="font-semibold">{m.name}</span>
+                          <span className="font-mono text-slate-400">({m.afn})</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Caution Callout */}
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50/70 border border-red-200/70 text-xs text-red-700 leading-relaxed">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <span>
+                  This will unenroll the project and allow the student and team to resubmit their registration proposal.
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setWarningDialog(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={executeRemoveSingleSubmission}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl text-white bg-red-600 hover:bg-red-700 active:bg-red-800 shadow-sm shadow-red-500/20 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Yes, Remove & Set to Pending</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {warningDialog.type === "reset_all" && (
+            <div
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200/90 shadow-2xl p-6 sm:p-7 space-y-4 animate-in zoom-in-95 duration-150 text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setWarningDialog(null)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-center shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div className="space-y-1 pr-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-800 bg-red-100/80 px-2 py-0.5 rounded-full border border-red-200">
+                      Danger Zone
+                    </span>
+                    <span className="text-[11px] font-semibold text-slate-400">
+                      Mass Reset
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-[#10334A] leading-snug">
+                    Reset All Submissions?
+                  </h3>
+                </div>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Are you sure you want to reset <strong className="text-slate-900 font-bold">all registrations</strong> for this form and return all students to <strong className="text-amber-700">Pending</strong>?
+              </p>
+
+              <div className="bg-slate-50/90 border border-slate-200/90 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-slate-700">
+                  <span>Current Registered Submissions:</span>
+                  <strong className="text-red-600 font-bold font-mono text-sm">{registeredCount}</strong>
+                </div>
+                <div className="flex items-center justify-between text-slate-700">
+                  <span>Resulting Pending Students:</span>
+                  <strong className="text-amber-700 font-bold font-mono text-sm">{relevantStudents.length} students</strong>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50/70 border border-red-200/70 text-xs text-red-700 leading-relaxed">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <span>
+                  All submitted project proposals and group assignments will be cleared. This action cannot be undone.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setWarningDialog(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={executeClearAllSubmissions}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl text-white bg-red-600 hover:bg-red-700 active:bg-red-800 shadow-sm shadow-red-500/20 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Reset All Submissions</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {warningDialog.type === "clear_recipients" && (
+            <div
+              className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200/90 shadow-2xl p-6 sm:p-7 space-y-4 animate-in zoom-in-95 duration-150 text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setWarningDialog(null)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+                </div>
+                <div className="space-y-1 pr-6">
+                  <h3 className="text-base sm:text-lg font-extrabold text-[#10334A] leading-snug">
+                    Clear All Recipients?
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Remove all currently loaded recipients from this reminder dispatch.
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                This will clear {remindTargetStudents.length} recipient(s) so you can manually enter test email addresses.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setWarningDialog(null)}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRemindTargetStudents([]);
+                    setWarningDialog(null);
+                    showToast("Cleared all recipients. You can now add test emails.");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl text-white bg-red-600 hover:bg-red-700 active:bg-red-800 shadow-sm transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear Recipients</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── FORM SETTINGS MODAL ─── */}
+      <FormSettingsModal
+        isOpen={isFormSettingsOpen}
+        onClose={() => setIsFormSettingsOpen(false)}
+        formId={formId}
+        form={form}
+        registeredStudents={relevantStudents.filter((s) => studentsWithStatus.find((st) => st.afn === s.afn)?.isSubmitted)}
+        submissions={serverSubmissions}
+        onFormUpdated={(updated) => setForm(updated)}
+        onResetSubmissions={() => {
+          setWarningDialog({
+            type: "reset_all",
+            count: registeredCount,
+          });
+        }}
+        onDeleted={() => {
+          showToast(`Form "${formTitle}" moved to Trash. It can be restored from Profile Settings within 7 days.`);
+          setTimeout(() => {
+            router.push(backHref);
+          }, 350);
+        }}
+      />
 
       {/* ─── TOAST NOTIFICATION ─── */}
       {toast && (

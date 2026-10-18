@@ -121,39 +121,12 @@ export function StudentFormsView() {
       // ignore
     }
 
-    // 3. Load initiatives published by HOD / Faculty (shared single source of truth)
+    // 3. Load initiatives published by HOD / Faculty from real DB
     const dynamicForms: AcademicForm[] = [];
     try {
       let storedInitiatives = localStorage.getItem("kit_published_initiatives");
       let list: any[] = storedInitiatives ? JSON.parse(storedInitiatives) : [];
-      if (list.length === 0) {
-        list = [
-          {
-            id: "INIT-BCS751",
-            subjectCode: "BCS751",
-            course: "B.Tech",
-            stream: "Computer Science & Engineering",
-            year: "4th Year",
-            section: "A",
-            category: "Academic",
-            projectType: "Mini Project",
-            customProjectName: "Mini Project",
-            startDate: "2026-10-16",
-            deadline: "2026-11-30",
-            publishedAt: "16 Oct 2026",
-            status: "Active",
-            publishedBy: "Rahul Singh",
-            assignedTo: "self",
-            coordinator: {
-              name: "Rahul Singh",
-              email: "hod@kit.ac.in",
-              phone: "+91 98765 43210",
-              role: "HOD",
-            },
-          },
-        ];
-        localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
-      }
+      list = list.filter((init: any) => init.id !== "INIT-759402" && init.id !== "INIT-BCS751");
 
       list.forEach((init: any) => {
         if (isStudentEligibleForForm(prof, init)) {
@@ -212,9 +185,12 @@ export function StudentFormsView() {
     setMembers(updated);
   };
 
-  const handleSubmitForm = (e: React.FormEvent) => {
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedForm) return;
+
+    const isGroup = members.some((m) => m.name.trim() !== "");
+    const regType = isGroup ? "Group" : "Individual";
 
     const submission: ProjectSubmissionData = {
       projectTitle: projectTitle.trim(),
@@ -237,7 +213,44 @@ export function StudentFormsView() {
       }),
     };
 
-    // Save to localStorage
+    // Save to real database via API
+    try {
+      await fetch("/api/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formId: selectedForm.id,
+          submission: {
+            formId: selectedForm.id,
+            projectName: projectTitle.trim(),
+            projectDescription: abstract.trim(),
+            registrationType: regType,
+            submittedAt: new Date().toISOString(),
+            verificationStatus: "pending",
+            student: {
+              afn: studentProfile.afn,
+              name: studentProfile.name,
+              rollNumber: studentProfile.rollNo,
+              email: studentProfile.email,
+              course: studentProfile.course,
+              stream: studentProfile.stream,
+              year: studentProfile.year,
+            },
+            teamMembers: members
+              .filter((m) => m.name.trim() !== "")
+              .map((m) => ({
+                name: m.name.trim(),
+                rollNumber: m.rollNo.trim(),
+                afn: m.afn.trim(),
+              })),
+          },
+        }),
+      });
+    } catch (err) {
+      console.warn("Could not sync submission to server database:", err);
+    }
+
+    // Save to local cache
     try {
       const storedSubs = JSON.parse(localStorage.getItem("kit_student_form_submissions") || "{}");
       storedSubs[selectedForm.id] = submission;
@@ -446,7 +459,7 @@ export function StudentFormsView() {
                 <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50/50 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-                      Submitted Project Proposal:
+                      Submitted Project Registration:
                     </span>
                     <p className="font-bold text-slate-900">{form.submissionData.projectTitle}</p>
                     <p className="text-[11px] text-slate-500">

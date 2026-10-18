@@ -1,4 +1,4 @@
-import studentsData from "@/data/students.json";
+import studentsData from "../data/students.json";
 
 export type StudentRecord = {
   id: number;

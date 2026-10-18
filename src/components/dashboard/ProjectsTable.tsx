@@ -158,66 +158,41 @@ export function ProjectsTable() {
     setIsMounted(true);
     setSession(getActiveSession());
 
-    const loadData = () => {
+    const loadData = async () => {
       try {
-        const storedInit = localStorage.getItem("kit_published_initiatives");
-        let initList: any[] = storedInit ? JSON.parse(storedInit) : [];
-        if (initList.length === 0) {
-          initList = [
-            {
-              id: "INIT-BCS751",
-              subjectCode: "BCS751",
-              course: "B.Tech",
-              stream: "Computer Science & Engineering",
-              year: "4th Year",
-              section: "A",
-              category: "Academic",
-              projectType: "Mini Project",
-              customProjectName: "Mini Project",
-              startDate: "2026-10-16",
-              deadline: "2026-11-30",
-              publishedAt: "16 Oct 2026",
-              status: "Active",
-              publishedBy: "Rahul Singh",
-              assignedTo: "self",
-              coordinator: {
-                name: "Rahul Singh",
-                email: "hod@kit.ac.in",
-                phone: "+91 98765 43210",
-                role: "HOD",
-              },
-            },
-          ];
-          localStorage.setItem("kit_published_initiatives", JSON.stringify(initList));
+        const res = await fetch("/api/forms");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.forms)) {
+            setInitiatives(data.forms);
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
+          }
         }
-        setInitiatives(initList);
       } catch {
-        setInitiatives([]);
+        const storedInit = localStorage.getItem("kit_published_initiatives");
+        setInitiatives(storedInit ? JSON.parse(storedInit) : []);
       }
 
       try {
-        const rawSubs = localStorage.getItem("kit_public_submissions");
-        if (rawSubs) {
-          const parsed = JSON.parse(rawSubs);
-          let modified = false;
-          for (const k of Object.keys(parsed)) {
-            if (Array.isArray(parsed[k])) {
-              const initLen = parsed[k].length;
-              parsed[k] = parsed[k].filter(
-                (sub: any) => !String(sub.projectName || "").toLowerCase().includes("quadcopter")
-              );
-              if (parsed[k].length !== initLen) modified = true;
-            }
+        const resSubs = await fetch("/api/submissions");
+        if (resSubs.ok) {
+          const dataSubs = await resSubs.json();
+          if (dataSubs.success && dataSubs.submissions) {
+            const clean = { ...dataSubs.submissions };
+            delete clean["INIT-759402"];
+            delete clean["INIT-BCS751"];
+            delete clean["BCS751"];
+            setPublicSubmissions(clean);
+            localStorage.setItem("kit_public_submissions", JSON.stringify(clean));
           }
-          if (modified) {
-            localStorage.setItem("kit_public_submissions", JSON.stringify(parsed));
-          }
-          setPublicSubmissions(parsed);
-        } else {
-          setPublicSubmissions({});
         }
       } catch {
-        setPublicSubmissions({});
+        const rawSubs = localStorage.getItem("kit_public_submissions");
+        const parsed = rawSubs ? JSON.parse(rawSubs) : {};
+        delete parsed["INIT-759402"];
+        delete parsed["INIT-BCS751"];
+        delete parsed["BCS751"];
+        setPublicSubmissions(parsed);
       }
     };
 
@@ -232,13 +207,25 @@ export function ProjectsTable() {
     };
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const storedInit = localStorage.getItem("kit_published_initiatives");
-      setInitiatives(storedInit ? JSON.parse(storedInit) : []);
-      const storedSubs = localStorage.getItem("kit_public_submissions");
-      setPublicSubmissions(storedSubs ? JSON.parse(storedSubs) : {});
+      const res = await fetch("/api/forms");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.forms)) {
+          setInitiatives(data.forms);
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
+        }
+      }
+      const resSubs = await fetch("/api/submissions");
+      if (resSubs.ok) {
+        const dataSubs = await resSubs.json();
+        if (dataSubs.success && dataSubs.submissions) {
+          setPublicSubmissions(dataSubs.submissions);
+          localStorage.setItem("kit_public_submissions", JSON.stringify(dataSubs.submissions));
+        }
+      }
     } catch {
       // ignore
     }
@@ -252,54 +239,50 @@ export function ProjectsTable() {
 
     const result: Project[] = [];
 
-    // 1. Published departmental initiatives / projects
-    initiatives.forEach((item) => {
-      result.push(initiativeToProject(item));
-    });
-
-    // 2. Student project submissions from public forms
+    // The Project Directory is strictly the archive for completed projects
+    // (projects finally submitted by the student and the whole process was successful)
     Object.keys(publicSubmissions).forEach((formKey) => {
       const subs = publicSubmissions[formKey];
       if (Array.isArray(subs)) {
         subs.forEach((sub: any, idx: number) => {
-          result.push({
-            id: `SUB-${sub.student?.afn || idx}-${formKey}`,
-            code: sub.formId || formKey,
-            title: sub.projectName || "Student Project Proposal",
-            domain: sub.projectDescription ? sub.projectDescription.slice(0, 60) + "..." : "Academic Project",
-            branch: sub.student?.stream || "Computer Science & Engineering",
-            course: sub.student?.course || "B.Tech",
-            year: sub.student?.year || "4th Year",
-            session: "2026-27",
-            facultyGuide: "Rahul Singh (HOD)",
-            teamLead: sub.student?.name || "Student Lead",
-            teamLeadAfn: sub.student?.afn || "—",
-            teamLeadRoll: sub.student?.rollNumber || "—",
-            teamSize: 1 + (sub.teamMembers?.length || 0),
-            status: "Ongoing",
-            submissionDate: sub.submittedAt
-              ? new Date(sub.submittedAt).toLocaleDateString("en-IN")
-              : "Current",
-            isInitiative: false,
-            section: sub.student?.section || "A",
-          });
+          const isSuccessful =
+            sub.status?.toLowerCase() === "completed" ||
+            sub.finalSubmissionCompleted === true ||
+            (sub.verificationStatus?.toLowerCase() === "verified" &&
+              sub.approvalStatus?.toLowerCase() === "approved");
+
+          if (isSuccessful) {
+            result.push({
+              id: `PRJ-${sub.student?.afn || idx}-${formKey}`,
+              code: sub.formId || formKey,
+              title: sub.projectName || "Student Project",
+              domain: sub.projectDescription ? sub.projectDescription.slice(0, 60) + "..." : "Completed Project",
+              branch: sub.student?.stream || "Computer Science & Engineering",
+              course: sub.student?.course || "B.Tech",
+              year: sub.student?.year || "4th Year",
+              session: sub.session || "2026-27",
+              facultyGuide: sub.guideName || "Rahul Singh (HOD)",
+              teamLead: sub.student?.name || "Student Lead",
+              teamLeadAfn: sub.student?.afn || "—",
+              teamLeadRoll: sub.student?.rollNumber || "—",
+              teamSize: 1 + (sub.teamMembers?.length || 0),
+              status: "Completed",
+              submissionDate: sub.submittedAt
+                ? new Date(sub.submittedAt).toLocaleDateString("en-IN")
+                : "Completed",
+              isInitiative: false,
+              section: sub.student?.section || "A",
+            });
+          }
         });
       }
     });
 
     return result;
-  }, [isMounted, initiatives, publicSubmissions]);
+  }, [isMounted, publicSubmissions]);
 
   const isCompleted = (p: Project) => {
-    if (p.status?.toLowerCase() === "completed") return true;
-    if (p.deadline) {
-      const end = new Date(p.deadline);
-      if (!isNaN(end.getTime())) {
-        end.setHours(23, 59, 59, 999);
-        return new Date() > end;
-      }
-    }
-    return false;
+    return p.status?.toLowerCase() === "completed";
   };
 
   const isOngoing = (p: Project) => {
@@ -656,54 +639,15 @@ export function ProjectsTable() {
         </div>
       </div>
 
-      {/* Filter Tabs & Search / Export Bar (Matching Applications Inbox Design) */}
+      {/* Filter Tabs & Search / Export Bar (Completed Projects Archive) */}
       <div className="shrink-0 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
         {/* Minimal Tab Bar */}
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-medium text-slate-600 self-start overflow-x-auto max-w-full">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("ALL");
-              setCurrentPage(1);
-            }}
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "ALL"
-                ? "bg-white text-slate-900 shadow-xs font-semibold"
-                : "hover:text-slate-900"
-            }`}
-          >
-            All <span className="opacity-70 ml-1">({tabCounts.ALL})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("ONGOING");
-              setCurrentPage(1);
-            }}
-            title="Starting to end"
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "ONGOING"
-                ? "bg-white text-[#0D3481] shadow-xs font-semibold"
-                : "hover:text-slate-900"
-            }`}
-          >
-            Ongoing <span className="opacity-70 ml-1">({tabCounts.ONGOING})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("COMPLETED");
-              setCurrentPage(1);
-            }}
-            title="Ends on the last date of final submission"
-            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === "COMPLETED"
-                ? "bg-white text-emerald-800 shadow-xs font-semibold"
-                : "hover:text-slate-900"
-            }`}
-          >
-            Completed <span className="opacity-70 ml-1">({tabCounts.COMPLETED})</span>
-          </button>
+          <div className="px-3.5 py-1.5 rounded-lg bg-white text-emerald-800 shadow-xs font-bold flex items-center gap-1.5 whitespace-nowrap">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span>Completed Projects Archive</span>
+            <span className="opacity-70 ml-1">({filteredProjects.length})</span>
+          </div>
         </div>
 
         {/* Right Controls: Refresh, CSV Export & Search */}
@@ -781,7 +725,7 @@ export function ProjectsTable() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search proposals, startups, ID..."
+              placeholder="Search projects, startups, ID..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -868,11 +812,11 @@ export function ProjectsTable() {
                       <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3 border border-slate-200">
                         <FolderGit2 size={24} className="stroke-[1.75]" />
                       </div>
-                      <p className="text-sm font-semibold text-slate-700">No projects in this directory yet</p>
+                      <p className="text-sm font-semibold text-slate-700">No completed projects in this directory yet</p>
                       <p className="text-xs text-slate-400 mt-1 max-w-sm">
                         {isFiltered
-                          ? "No projects match the current search or filter selection."
-                          : "Student project submissions will appear in this directory once submitted."}
+                          ? "No completed projects match the current search or filter selection."
+                          : "Projects will appear here once students complete final submission and the evaluation process is marked successful."}
                       </p>
                       {isFiltered && (
                         <button

@@ -18,7 +18,7 @@ export const ROLE_DATA: Record<RoleType, {
 }> = {
   HOD: {
     name: "Rahul Singh",
-    email: "hod@kit.ac.in",
+    email: "muditcodes@gmail.com",
     initial: "RS",
     roleLabel: "HOD",
     dept: "Dept. of Computer Science & Engineering",
@@ -45,6 +45,10 @@ export function getActiveSession(): UserSession | null {
     const local = localStorage.getItem(AUTH_COOKIE_NAME);
     if (local) {
       const parsed = JSON.parse(local);
+      if (parsed?.role === "HOD" && parsed?.email !== "muditcodes@gmail.com") {
+        parsed.email = "muditcodes@gmail.com";
+        saveActiveSession(parsed);
+      }
       if (parsed?.role && (parsed.role === "HOD" || parsed.role === "COORDINATOR")) {
         return parsed;
       }
@@ -56,6 +60,10 @@ export function getActiveSession(): UserSession | null {
     const match = document.cookie.match(new RegExp('(^| )' + AUTH_COOKIE_NAME + '=([^;]+)'));
     if (match) {
       const parsed = JSON.parse(decodeURIComponent(match[2]));
+      if (parsed?.role === "HOD" && parsed?.email !== "muditcodes@gmail.com") {
+        parsed.email = "muditcodes@gmail.com";
+        saveActiveSession(parsed);
+      }
       if (parsed?.role) return parsed;
     }
   } catch {}
@@ -70,6 +78,14 @@ export function saveActiveSession(session: UserSession) {
     localStorage.setItem(AUTH_COOKIE_NAME, str);
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(str)}; path=/; max-age=604800; SameSite=Lax`;
+
+  // Asynchronously synchronize with server session endpoint to issue signed HMAC cookie
+  fetch("/api/auth/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: str,
+  }).catch(() => {});
+
   try {
     window.dispatchEvent(new Event("kit-auth-change"));
   } catch {}
@@ -81,6 +97,9 @@ export function clearActiveSession() {
     localStorage.removeItem(AUTH_COOKIE_NAME);
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+
+  fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
+
   try {
     window.dispatchEvent(new Event("kit-auth-change"));
   } catch {}
@@ -167,6 +186,19 @@ export function parseSessionCookie(cookieValue: string | undefined | null): User
   if (!cookieValue) return null;
   try {
     const decoded = decodeURIComponent(cookieValue);
+
+    // Support signed token payload extraction
+    if (decoded.startsWith("signed:")) {
+      const parts = decoded.slice(7).split(".");
+      if (parts.length === 2) {
+        const jsonStr = atob(parts[0].replace(/-/g, "+").replace(/_/g, "/"));
+        const parsed = JSON.parse(jsonStr);
+        if (parsed?.role === "HOD" || parsed?.role === "COORDINATOR") {
+          return parsed;
+        }
+      }
+    }
+
     const parsed = JSON.parse(decoded);
     if (parsed?.role === "HOD" || parsed?.role === "COORDINATOR") {
       return parsed;
