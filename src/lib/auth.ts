@@ -23,7 +23,7 @@ export const ROLE_DATA: Record<RoleType, {
     roleLabel: "HOD",
     dept: "Dept. of Computer Science & Engineering",
     emoji: "🎓",
-    shortAction: "Manage Roles",
+    shortAction: "Administration",
   },
   COORDINATOR: {
     name: "Dr. A. Sharma",

@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
+import { GraduationCap, BookOpen, LucideIcon } from "lucide-react";
 import { RoleType } from "@/lib/auth";
 
 export interface RoleOption {
   role: RoleType;
-  emoji: string;
+  icon: LucideIcon;
   title: string;
   subtitle: string;
 }
@@ -13,13 +14,13 @@ export interface RoleOption {
 export const ROLE_OPTIONS: RoleOption[] = [
   {
     role: "HOD",
-    emoji: "🎓",
+    icon: GraduationCap,
     title: "HOD",
-    subtitle: "Manage Roles",
+    subtitle: "Administration",
   },
   {
     role: "COORDINATOR",
-    emoji: "👩‍💼",
+    icon: BookOpen,
     title: "Faculty",
     subtitle: "Project Coordinator",
   },
@@ -36,6 +37,7 @@ export function RoleSelector({
     <div className="grid grid-cols-2 gap-3 w-full select-none">
       {ROLE_OPTIONS.map((opt) => {
         const isSelected = selectedRole === opt.role;
+        const Icon = opt.icon;
         return (
           <button
             key={opt.role}
@@ -48,7 +50,11 @@ export function RoleSelector({
             }`}
           >
             <div className="flex items-center justify-center gap-1.5 leading-none">
-              <span className="text-sm">{opt.emoji}</span>
+              <Icon
+                className={`w-4 h-4 shrink-0 transition-colors ${
+                  isSelected ? "text-[#0D3481]" : "text-slate-500"
+                }`}
+              />
               <span
                 className={`text-xs sm:text-sm font-bold ${
                   isSelected ? "text-[#0D3481]" : "text-[#10334A]"

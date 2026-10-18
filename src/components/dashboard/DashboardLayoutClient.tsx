@@ -12,10 +12,12 @@ import {
   Menu, 
   X, 
   ShieldCheck, 
-  Award,
-  ChevronDown,
-  UserCog,
+  Award, 
+  ChevronDown, 
+  UserCog, 
   FileText,
+  GraduationCap,
+  BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
@@ -238,7 +240,7 @@ export function DashboardLayoutClient({
         }}
       >
         {/* Top Header of Sidebar */}
-        <div className={`h-16 md:h-20 flex items-center bg-[#F6F5F2] border-b border-slate-200 shrink-0 ${isSidebarOpen ? 'justify-between px-4 md:px-5 gap-3' : 'justify-center px-1.5 gap-1'}`}>
+        <div className={`h-16 flex items-center bg-[#F6F5F2] border-b border-slate-200 shrink-0 ${isSidebarOpen ? 'justify-between px-4 md:px-5 gap-3' : 'justify-center px-1.5 gap-1'}`}>
           <Logo 
             href={currentRole === "HOD" ? "/hod" : "/coordinator"} 
             onClick={() => setIsMobileMenuOpen(false)} 
@@ -423,7 +425,7 @@ export function DashboardLayoutClient({
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-screen overflow-y-auto w-full min-w-0 relative">
-        <header className="h-16 border-b bg-white flex items-center px-4 sm:px-8 sticky top-0 z-10 shadow-sm shrink-0 justify-between">
+        <header className="h-16 border-b border-slate-200 bg-white flex items-center px-4 sm:px-8 sticky top-0 z-10 shadow-2xs shrink-0 justify-between">
           <div className="flex items-center">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
@@ -440,7 +442,11 @@ export function DashboardLayoutClient({
                 ? "bg-blue-50 text-[#0D3481] border-blue-200"
                 : "bg-emerald-50 text-emerald-800 border-emerald-200"
             }`}>
-              <span className="text-xs">{currentRole === "HOD" ? "🎓" : "👩‍💼"}</span>
+              {currentRole === "HOD" ? (
+                <GraduationCap className="w-3.5 h-3.5 text-[#0D3481]" />
+              ) : (
+                <BookOpen className="w-3.5 h-3.5 text-emerald-800" />
+              )}
               <span>{ROLE_LABELS[currentRole]}</span>
             </div>
 

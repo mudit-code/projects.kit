@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Suspense } from "react";
 import { PageLoadingProvider } from "@/components/PageLoadingProvider";
 
 const geistSans = Geist({
@@ -34,9 +35,11 @@ export default function RootLayout({
         <link rel="icon" href="data:," />
       </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
-        <PageLoadingProvider>
-          {children}
-        </PageLoadingProvider>
+        <Suspense fallback={null}>
+          <PageLoadingProvider>
+            {children}
+          </PageLoadingProvider>
+        </Suspense>
       </body>
     </html>
   );

@@ -1,21 +1,46 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { usePathname } from 'next/navigation';
 import { KitScreenLoader } from './KitScreenLoader';
+
+// Isolated subcomponent to observe pathname changes inside Suspense boundary
+function PathnameListener({
+  onPathChange,
+}: {
+  onPathChange: (path: string) => void;
+}) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (pathname) {
+      onPathChange(pathname);
+    }
+  }, [pathname, onPathChange]);
+
+  return null;
+}
 
 // Helper to determine if a route is inside the main dashboard suite
 export function isDashboardPath(path: string | null): boolean {
   if (!path) return false;
+  const cleanPath = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+  
+  // Public/Auth routes are never dashboard paths
+  if (cleanPath === '/' || cleanPath === '/login' || cleanPath === '/register') {
+    return false;
+  }
+
   const dashboardPrefixes = [
-    '/',
+    '/hod',
+    '/coordinator',
     '/dashboard',
     '/roles',
     '/students',
     '/projects',
     '/forms',
   ];
-  return dashboardPrefixes.some((prefix) => path === prefix || (prefix !== '/' && path.startsWith(prefix + '/')));
+  return dashboardPrefixes.some((prefix) => cleanPath === prefix || cleanPath.startsWith(prefix + '/'));
 }
 
 export interface StartNavigationOptions {
@@ -59,7 +84,7 @@ const setScrollLocked = (locked: boolean) => {
 };
 
 export function PageLoadingProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathnameRef = useRef<string>('');
 
   // 1. Initial Website Load & Browser Refresh State:
   // Starts TRUE so that on first visit AND on every browser refresh (F5/reload/hard refresh),
@@ -189,18 +214,13 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     const isTargetDash = isDashboardPath(targetPath);
     const isInsideDashboard = isCurrentDash && isTargetDash;
 
-    // Dashboard-to-dashboard: show tab loader IMMEDIATELY (no debounce)
-    // so the progress bar is always visible when switching tabs
-    if (isInsideDashboard || isTargetDash || options?.immediate) {
-      if (isInsideDashboard || isTargetDash) {
-        setIsDashboardTabLoading(true);
-        setIsFullViewLoading(false);
-      } else {
-        setIsFullViewLoading(true);
-        setIsDashboardTabLoading(false);
-      }
+    // Dashboard navigation (switching tabs inside dashboard or entering dashboard):
+    // Show ONLY the in-tab loader inside <main>, NEVER the full-screen loader over sidebar/header
+    if (isInsideDashboard || isTargetDash) {
+      setIsDashboardTabLoading(true);
+      setIsFullViewLoading(false);
     } else {
-      // Non-dashboard navigation: 50ms debounce
+      // Non-dashboard navigation (e.g. going to /login, /register): 50ms debounce
       navTimerRef.current = setTimeout(() => {
         if (!isNavigatingRef.current) return;
         setIsFullViewLoading(true);
@@ -228,15 +248,19 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
   }, [endNavigation]);
 
   // Handle Route Changes when pathname updates
-  useEffect(() => {
+  const handlePathChange = useCallback((newPath: string) => {
     if (initialMountRef.current) {
       initialMountRef.current = false;
+      pathnameRef.current = newPath;
       return;
     }
 
-    // Pathname changed! The target route content has loaded and is now rendering.
-    endNavigation();
-  }, [pathname, endNavigation]);
+    if (pathnameRef.current !== newPath) {
+      pathnameRef.current = newPath;
+      // Pathname changed! The target route content has loaded and is now rendering.
+      endNavigation();
+    }
+  }, [endNavigation]);
 
   // Intercept internal link clicks and history navigation for subsequent loading
   useEffect(() => {
@@ -266,7 +290,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     };
 
     const handlePopState = () => {
-      if (window.location.pathname !== pathname) {
+      if (window.location.pathname !== pathnameRef.current) {
         setTimeout(() => {
           startNavigation(window.location.pathname);
         }, 0);
@@ -313,7 +337,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
       window.removeEventListener('keydown', handleKeyDown);
       window.history.pushState = originalPushState;
     };
-  }, [startNavigation, endNavigation, pathname]);
+  }, [startNavigation, endNavigation]);
 
   return (
     <LoadingContext.Provider
@@ -327,6 +351,10 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         stopLoading,
       }}
     >
+      <Suspense fallback={null}>
+        <PathnameListener onPathChange={handlePathChange} />
+      </Suspense>
+
       {/* 1. INITIAL LOAD & REFRESH LOADER: Screen loader with download line that completes when page loads */}
       {isInitialLoading && (
         <div

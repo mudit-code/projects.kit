@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { LOGOS } from '@/lib/logos';
 
 export interface KitScreenLoaderProps {
   /** Fullscreen overlay mode */
@@ -147,7 +148,7 @@ export function KitScreenLoader({
       <div className="relative flex items-center justify-center animate-kit-blink py-1">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/kit.png"
+          src={LOGOS.kit}
           alt="KIT Logo"
           className={`${currentSize.logoWidth} h-auto object-contain select-none pointer-events-none transition-all duration-300`}
         />

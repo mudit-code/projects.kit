@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import studentsData from "@/data/students.json";
+import { StreamBadge } from "@/components/StreamBadge";
 import {
   Search,
   ChevronDown,
@@ -380,10 +381,8 @@ export default function StudentsTable() {
                         <span className="text-xs">{student.email}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-xs font-medium text-slate-700 whitespace-nowrap">
-                        {shortStream(student.stream)}
-                      </span>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <StreamBadge stream={student.stream} badge />
                     </td>
                     <td className="px-4 py-3">
                       <span

@@ -149,18 +149,146 @@ export function ProjectsTable() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [session, setSession] = useState(() => getActiveSession());
+  const [isMounted, setIsMounted] = useState(false);
+  const [session, setSession] = useState<any>(null);
+  const [initiatives, setInitiatives] = useState<any[]>([]);
+  const [publicSubmissions, setPublicSubmissions] = useState<Record<string, any[]>>({});
+
+  useEffect(() => {
+    setIsMounted(true);
+    setSession(getActiveSession());
+
+    const loadData = () => {
+      try {
+        const storedInit = localStorage.getItem("kit_published_initiatives");
+        let initList: any[] = storedInit ? JSON.parse(storedInit) : [];
+        if (initList.length === 0) {
+          initList = [
+            {
+              id: "INIT-BCS751",
+              subjectCode: "BCS751",
+              course: "B.Tech",
+              stream: "Computer Science & Engineering",
+              year: "4th Year",
+              section: "A",
+              category: "Academic",
+              projectType: "Mini Project",
+              customProjectName: "Mini Project",
+              startDate: "2026-10-16",
+              deadline: "2026-11-30",
+              publishedAt: "16 Oct 2026",
+              status: "Active",
+              publishedBy: "Rahul Singh",
+              assignedTo: "self",
+              coordinator: {
+                name: "Rahul Singh",
+                email: "hod@kit.ac.in",
+                phone: "+91 98765 43210",
+                role: "HOD",
+              },
+            },
+          ];
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(initList));
+        }
+        setInitiatives(initList);
+      } catch {
+        setInitiatives([]);
+      }
+
+      try {
+        const rawSubs = localStorage.getItem("kit_public_submissions");
+        if (rawSubs) {
+          const parsed = JSON.parse(rawSubs);
+          let modified = false;
+          for (const k of Object.keys(parsed)) {
+            if (Array.isArray(parsed[k])) {
+              const initLen = parsed[k].length;
+              parsed[k] = parsed[k].filter(
+                (sub: any) => !String(sub.projectName || "").toLowerCase().includes("quadcopter")
+              );
+              if (parsed[k].length !== initLen) modified = true;
+            }
+          }
+          if (modified) {
+            localStorage.setItem("kit_public_submissions", JSON.stringify(parsed));
+          }
+          setPublicSubmissions(parsed);
+        } else {
+          setPublicSubmissions({});
+        }
+      } catch {
+        setPublicSubmissions({});
+      }
+    };
+
+    loadData();
+    window.addEventListener("kit-initiatives-change", loadData);
+    window.addEventListener("kit-submissions-change", loadData);
+    window.addEventListener("storage", loadData);
+    return () => {
+      window.removeEventListener("kit-initiatives-change", loadData);
+      window.removeEventListener("kit-submissions-change", loadData);
+      window.removeEventListener("storage", loadData);
+    };
+  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    try {
+      const storedInit = localStorage.getItem("kit_published_initiatives");
+      setInitiatives(storedInit ? JSON.parse(storedInit) : []);
+      const storedSubs = localStorage.getItem("kit_public_submissions");
+      setPublicSubmissions(storedSubs ? JSON.parse(storedSubs) : {});
+    } catch {
+      // ignore
+    }
     setTimeout(() => {
       setIsRefreshing(false);
     }, 450);
   };
 
   const projects = useMemo<Project[]>(() => {
-    return [];
-  }, []);
+    if (!isMounted) return [];
+
+    const result: Project[] = [];
+
+    // 1. Published departmental initiatives / projects
+    initiatives.forEach((item) => {
+      result.push(initiativeToProject(item));
+    });
+
+    // 2. Student project submissions from public forms
+    Object.keys(publicSubmissions).forEach((formKey) => {
+      const subs = publicSubmissions[formKey];
+      if (Array.isArray(subs)) {
+        subs.forEach((sub: any, idx: number) => {
+          result.push({
+            id: `SUB-${sub.student?.afn || idx}-${formKey}`,
+            code: sub.formId || formKey,
+            title: sub.projectName || "Student Project Proposal",
+            domain: sub.projectDescription ? sub.projectDescription.slice(0, 60) + "..." : "Academic Project",
+            branch: sub.student?.stream || "Computer Science & Engineering",
+            course: sub.student?.course || "B.Tech",
+            year: sub.student?.year || "4th Year",
+            session: "2026-27",
+            facultyGuide: "Rahul Singh (HOD)",
+            teamLead: sub.student?.name || "Student Lead",
+            teamLeadAfn: sub.student?.afn || "—",
+            teamLeadRoll: sub.student?.rollNumber || "—",
+            teamSize: 1 + (sub.teamMembers?.length || 0),
+            status: "Ongoing",
+            submissionDate: sub.submittedAt
+              ? new Date(sub.submittedAt).toLocaleDateString("en-IN")
+              : "Current",
+            isInitiative: false,
+            section: sub.student?.section || "A",
+          });
+        });
+      }
+    });
+
+    return result;
+  }, [isMounted, initiatives, publicSubmissions]);
 
   const isCompleted = (p: Project) => {
     if (p.status?.toLowerCase() === "completed") return true;
@@ -404,7 +532,7 @@ export function ProjectsTable() {
               Reset filters
             </button>
           )}
-          {session?.role === "HOD" && (
+          {isMounted && session?.role === "HOD" && (
             <Link
               href="/hod/projects/new"
               className="px-3.5 py-1.5 rounded-xl bg-[#0D3481] hover:bg-[#0b2b6b] text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"

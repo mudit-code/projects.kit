@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getTimePhrase } from "@/lib/timePhrases";
+import { isStudentEligibleForForm } from "@/lib/formTargeting";
+import { DEFAULT_STUDENT_PROFILE } from "./EditProfileModal";
 
 export function StudentDashboardHome() {
   const [studentName, setStudentName] = useState("Student");
   const [formCount, setFormCount] = useState(0);
-  const [timeData] = useState(() => {
-    const hour = new Date().getHours();
-    return getTimePhrase(hour);
+  const [timeData, setTimeData] = useState(() => {
+    return getTimePhrase(12);
   });
 
   useEffect(() => {
@@ -36,21 +37,28 @@ export function StudentDashboardHome() {
       // ignore
     }
 
-    // Count pending forms
+    // Count pending forms eligible for this student
     try {
+      let prof = DEFAULT_STUDENT_PROFILE;
+      const storedProf = localStorage.getItem("kit_student_profile");
+      if (storedProf) prof = JSON.parse(storedProf);
+
       const stored = localStorage.getItem("kit_published_initiatives");
       if (stored) {
-        const parsed = JSON.parse(stored);
-        setFormCount(Array.isArray(parsed) ? parsed.length : 0);
+        const parsed: any[] = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const eligible = parsed.filter((item) => isStudentEligibleForForm(prof, item));
+          setFormCount(eligible.length);
+        }
       }
     } catch {
       // ignore
     }
+
+    const currentHour = new Date().getHours();
+    setTimeData(getTimePhrase(currentHour));
   }, []);
 
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
   const TimeIcon = timeData.icon;
 
   return (
@@ -67,9 +75,9 @@ export function StudentDashboardHome() {
               <GraduationCap className="w-3.5 h-3.5 text-[#0D3481]" />
               Student Dashboard
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
+            <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
               <TimeIcon className="w-7 h-7 text-[#0D3481]" />
-              {timeData.phrase}
+              <span suppressHydrationWarning>{timeData.phrase}</span>
             </h1>
             <p className="text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
               Hey {studentName} — access your projects, respond to faculty forms, and track your

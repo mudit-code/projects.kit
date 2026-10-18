@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { getActiveSession, UserSession } from "@/lib/auth";
+import { LOGOS } from "@/lib/logos";
+import { StreamBadge } from "@/components/StreamBadge";
+import { isStudentEligibleForForm } from "@/lib/formTargeting";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   Search,
@@ -249,6 +252,16 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     };
   }, []);
 
+  // Lock body scroll when registration form is open so only the form content scrolls
+  useEffect(() => {
+    if (step === "register") {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }
+  }, [step]);
+
   /* ─── Fetch Student ─── */
   const handleAfnSubmit = useCallback(
     async (e?: React.FormEvent) => {
@@ -282,50 +295,68 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
           return;
         }
 
-        // Fetch available forms from API + localStorage initiatives
-        const formsRes = await fetch(
-          `/api/forms/available?year=${encodeURIComponent(data.year)}&course=${encodeURIComponent(data.course)}&stream=${encodeURIComponent(data.stream)}`
-        );
-        const formsData = await formsRes.json();
-        let allForms: AvailableForm[] = formsData.forms || [];
-
-        // Also check localStorage for dynamically published initiatives
+        // Load published initiatives from localStorage (the single source of truth shared with dashboard)
+        let publishedInitiatives: any[] = [];
         try {
-          const storedInitiatives = localStorage.getItem("kit_published_initiatives");
-          if (storedInitiatives) {
-            const parsed = JSON.parse(storedInitiatives);
-            parsed.forEach((init: any) => {
-              const isTargeted =
-                init.course === data.course &&
-                (init.stream.includes(data.stream) ||
-                  data.stream.includes(init.stream) ||
-                  init.stream === "Computer Science & Engineering");
-
-              if (isTargeted) {
-                if (!allForms.find((f) => f.id === init.id)) {
-                  allForms.push({
-                    id: init.id,
-                    title: `${init.customProjectName || init.projectType} Registration Form`,
-                    description: `Project proposal and team declaration form dispatched by ${init.publishedBy}.`,
-                    dispatchedBy: init.publishedBy || "HOD",
-                    roleBadge: "HOD",
-                    subjectCode: init.subjectCode || "KCS-751",
-                    category: init.category || "Academic",
-                    course: init.course,
-                    stream: init.stream,
-                    year: init.year,
-                    section: init.section,
-                    startDate: init.startDate || "2026-10-15",
-                    deadline: init.deadline || "2026-11-30",
-                    status: "Open",
-                  });
-                }
-              }
-            });
+          const stored = localStorage.getItem("kit_published_initiatives");
+          if (stored) {
+            publishedInitiatives = JSON.parse(stored);
+          } else {
+            publishedInitiatives = [
+              {
+                id: "INIT-BCS751",
+                subjectCode: "BCS751",
+                course: "B.Tech",
+                stream: "Computer Science & Engineering",
+                year: "4th Year",
+                section: "A",
+                category: "Academic",
+                projectType: "Mini Project",
+                customProjectName: "Mini Project",
+                startDate: "2026-10-16",
+                deadline: "2026-11-30",
+                publishedAt: "16 Oct 2026",
+                status: "Active",
+                publishedBy: "Rahul Singh",
+                assignedTo: "self",
+                coordinator: {
+                  name: "Rahul Singh",
+                  email: "hod@kit.ac.in",
+                  phone: "+91 98765 43210",
+                  role: "HOD",
+                },
+              },
+            ];
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(publishedInitiatives));
           }
         } catch {
-          // ignore
+          publishedInitiatives = [];
         }
+
+        let allForms: AvailableForm[] = [];
+
+        publishedInitiatives.forEach((init: any) => {
+          if (isStudentEligibleForForm(data, init)) {
+            allForms.push({
+              id: init.id,
+              title: init.customProjectName
+                ? `${init.customProjectName} Registration Form`
+                : `${init.projectType || "Project"} Registration Form`,
+              description: init.description || "",
+              dispatchedBy: init.publishedBy || (init.coordinator?.name ? `${init.coordinator.name} (${init.coordinator.role || "Coordinator"})` : "Rahul Singh (HOD)"),
+              roleBadge: init.assignedTo === "faculty" || init.coordinator?.role === "Faculty" ? "Faculty" : "HOD",
+              subjectCode: init.subjectCode || "BCS751",
+              category: init.category || "Academic",
+              course: init.course || data.course,
+              stream: init.stream || data.stream,
+              year: init.year || data.year,
+              section: init.section || data.section || "A",
+              startDate: init.startDate || "2026-10-16",
+              deadline: init.deadline || "2026-11-30",
+              status: "Open",
+            });
+          }
+        });
 
         // Filter out forms student has already submitted to
         const submissions = loadSubmissions();
@@ -455,46 +486,46 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
      RENDER
      ═══════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-[#F6F5F2] flex flex-col">
-      {/* ─── Subtle top accent line ─── */}
-      <div className="h-[3px] bg-gradient-to-r from-[#0D3481] via-[#4F46E5] to-[#0D3481]" />
-
+    <div className={`bg-[#F6F5F2] flex flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"}`}>
       {/* ─── Header ─── */}
-      <header className="w-full px-5 sm:px-8 py-4 flex items-center justify-between border-b border-slate-200/60 bg-white/70 backdrop-blur-md sticky top-0 z-30">
-        <button
-          onClick={handleReset}
-          onTouchStart={handleLogoTouchStart}
-          onTouchEnd={handleLogoTouchEnd}
-          onTouchCancel={handleLogoTouchEnd}
-          onMouseDown={handleLogoTouchStart}
-          onMouseUp={handleLogoTouchEnd}
-          onMouseLeave={handleLogoTouchEnd}
-          className="flex items-center gap-2.5 group cursor-pointer select-none"
-          aria-label="projects.kit home"
-        >
-          <div className="h-8 w-8 flex items-center justify-center">
+      <header className="relative w-full px-5 sm:px-8 py-3.5 flex items-center justify-between border-b border-slate-200/60 bg-white/70 backdrop-blur-md sticky top-0 z-30">
+        {/* Leftmost: Institution Logo */}
+        <div className="flex items-center">
+          <button
+            onClick={handleReset}
+            onTouchStart={handleLogoTouchStart}
+            onTouchEnd={handleLogoTouchEnd}
+            onTouchCancel={handleLogoTouchEnd}
+            onMouseDown={handleLogoTouchStart}
+            onMouseUp={handleLogoTouchEnd}
+            onMouseLeave={handleLogoTouchEnd}
+            className="flex items-center group cursor-pointer select-none"
+            aria-label="Kanpur Institute of Technology"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/kit.png"
+              src={LOGOS.kit}
               alt="KIT Logo"
-              className="h-8 w-auto object-contain group-hover:scale-105 transition-transform"
+              className="h-8 sm:h-9 w-auto max-w-[140px] sm:max-w-[170px] object-contain group-hover:scale-105 transition-transform"
               draggable={false}
             />
-          </div>
-          <span className="text-sm font-extrabold tracking-tight text-[#10334A]">
-            projects<span className="text-[#0D3481]">.kit</span>
-          </span>
-        </button>
+          </button>
+        </div>
 
-        <div className="flex items-center gap-2.5">
-          <div className="text-[11px] font-semibold text-slate-400 tracking-wide">
-            Student Portal
-          </div>
+        {/* Middle: projects.kit */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-auto">
+          <button
+            onClick={handleReset}
+            className="text-base sm:text-lg font-extrabold tracking-tight text-[#10334A] hover:opacity-90 transition-opacity cursor-pointer select-none"
+            aria-label="projects.kit home"
+          >
+            projects<span className="text-[#0D3481]">.kit</span>
+          </button>
         </div>
       </header>
 
       {/* ─── Main Content ─── */}
-      <main className="flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
+      <main className={`flex-1 flex items-center justify-center px-4 ${step === "register" ? "py-2 sm:py-3 overflow-hidden min-h-0" : "py-8 sm:py-12"}`}>
         <AnimatePresence mode="wait">
           {/* ═══ STEP 1: Landing — AFN Entry ═══ */}
           {step === "landing" && (
@@ -516,7 +547,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src="/kit.png"
+                    src={LOGOS.kit}
                     alt="Kanpur Institute of Technology"
                     className="h-14 sm:h-16 w-auto object-contain cursor-pointer select-none active:scale-95 transition-transform"
                     draggable={false}
@@ -627,8 +658,9 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                       <span className="font-mono font-bold text-[#0D3481]">
                         AFN: {student.afn}
                       </span>
-                      <span>
-                        {student.course} · {student.stream}
+                      <span className="inline-flex items-center gap-1">
+                        <span>{student.course} ·</span>
+                        <StreamBadge stream={student.stream} />
                       </span>
                       <span>{student.year}</span>
                     </div>
@@ -695,24 +727,38 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                             {form.category}
                           </span>
                           <span
-                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
                               isUrgent
                                 ? "bg-red-50 text-red-700 border-red-200"
                                 : "bg-emerald-50 text-emerald-700 border-emerald-200"
                             }`}
                           >
-                            {isUrgent
-                              ? `⏳ ${remaining} day${remaining !== 1 ? "s" : ""} left`
-                              : `${remaining} days remaining`}
+                            {isUrgent ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={LOGOS.hourglass}
+                                  alt="Urgent deadline"
+                                  className="w-3.5 h-3.5 object-contain shrink-0"
+                                />
+                                <span>
+                                  {remaining} day{remaining !== 1 ? "s" : ""} left
+                                </span>
+                              </>
+                            ) : (
+                              <span>{remaining} days remaining</span>
+                            )}
                           </span>
                         </div>
 
-                        <h3 className="text-base font-bold text-slate-900 leading-snug mb-1.5">
+                        <h3 className={`text-base font-bold text-slate-900 leading-snug ${form.description ? "mb-1.5" : "mb-4"}`}>
                           {form.title}
                         </h3>
-                        <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                          {form.description}
-                        </p>
+                        {form.description ? (
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                            {form.description}
+                          </p>
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 mb-5">
                           <div className="flex items-center gap-1.5">
@@ -765,14 +811,14 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="max-w-2xl w-full"
+              className="max-w-2xl w-full max-h-full flex flex-col min-h-0"
             >
               <form
                 onSubmit={handleSubmit}
-                className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden"
+                className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden flex flex-col max-h-[calc(100vh-80px)] sm:max-h-[calc(100vh-90px)]"
               >
                 {/* Form Header */}
-                <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-start justify-between gap-3">
+                <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex items-start justify-between gap-3 shrink-0">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-[#0D3481] text-white flex items-center justify-center shrink-0">
                       <FileText className="w-5 h-5" />
@@ -795,7 +841,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                   </button>
                 </div>
 
-                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                <div className="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
                   {/* Deadline Notice */}
                   <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between">
                     <span>
@@ -855,8 +901,9 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                         <span className="text-[10px] text-slate-400 block">
                           Course & Stream
                         </span>
-                        <strong className="text-slate-800">
-                          {student.course} · {student.stream}
+                        <strong className="text-slate-800 inline-flex items-center gap-1 mt-0.5">
+                          <span>{student.course} ·</span>
+                          <StreamBadge stream={student.stream} />
                         </strong>
                       </div>
                       <div>
@@ -952,8 +999,13 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                   {/* WhatsApp Number */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                      WhatsApp Number{" "}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={LOGOS.whatsapp}
+                        alt="WhatsApp"
+                        className="w-4 h-4 object-contain shrink-0"
+                      />
+                      <span>WhatsApp Number</span>
                       <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -1038,11 +1090,11 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start">
                               {/* AFN */}
                               <div className="space-y-1">
-                                <label className="text-[10px] font-semibold text-slate-500">
-                                  AFN
+                                <label className="text-[10px] font-semibold text-slate-500 flex items-center h-4">
+                                  <span>AFN</span>
                                 </label>
                                 <input
                                   type="text"
@@ -1058,16 +1110,16 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                                     fetchTeamMemberName(idx, mem.afn)
                                   }
                                   placeholder="e.g. 232457"
-                                  className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0D3481] focus:border-[#0D3481]"
+                                  className="h-8 w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0D3481] focus:border-[#0D3481]"
                                 />
                               </div>
 
                               {/* Name (auto-filled) */}
                               <div className="space-y-1">
-                                <label className="text-[10px] font-semibold text-slate-500">
-                                  Name{" "}
+                                <label className="text-[10px] font-semibold text-slate-500 flex items-center gap-1 h-4">
+                                  <span>Name</span>
                                   {teamLoading[idx] && (
-                                    <Loader2 className="w-2.5 h-2.5 inline animate-spin ml-1" />
+                                    <Loader2 className="w-2.5 h-2.5 animate-spin ml-0.5 text-[#0D3481]" />
                                   )}
                                 </label>
                                 <input
@@ -1075,14 +1127,20 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                                   value={mem.name}
                                   readOnly
                                   placeholder="Auto-filled from AFN"
-                                  className="w-full px-3 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-semibold cursor-not-allowed"
+                                  className="h-8 w-full px-3 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg text-slate-700 font-semibold cursor-not-allowed"
                                 />
                               </div>
 
                               {/* WhatsApp */}
                               <div className="space-y-1">
-                                <label className="text-[10px] font-semibold text-slate-500">
-                                  WhatsApp
+                                <label className="text-[10px] font-semibold text-slate-500 flex items-center gap-1 h-4">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={LOGOS.whatsapp}
+                                    alt="WhatsApp"
+                                    className="w-3 h-3 object-contain shrink-0"
+                                  />
+                                  <span>WhatsApp</span>
                                 </label>
                                 <input
                                   type="tel"
@@ -1096,7 +1154,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                                   }
                                   placeholder="9876543210"
                                   maxLength={10}
-                                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0D3481] focus:border-[#0D3481]"
+                                  className="h-8 w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0D3481] focus:border-[#0D3481]"
                                 />
                               </div>
                             </div>
@@ -1108,7 +1166,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 </div>
 
                 {/* Form Footer */}
-                <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex items-center justify-between">
+                <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex items-center justify-between shrink-0">
                   <button
                     type="button"
                     onClick={() => setStep("forms")}
@@ -1400,11 +1458,13 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
         </AnimatePresence>
       </main>
 
-      {/* ─── Footer ─── */}
-      <footer className="py-4 text-center text-[11px] text-slate-400 border-t border-slate-200/60">
-        projects.kit · Kanpur Institute of Technology · Academic Project
-        Lifecycle Suite
-      </footer>
+      {/* ─── Footer (Hidden when form is opened) ─── */}
+      {step !== "register" && (
+        <footer className="py-4 text-center text-[11px] text-slate-400 border-t border-slate-200/60 shrink-0">
+          projects.kit · Kanpur Institute of Technology · Academic Project
+          Lifecycle Suite
+        </footer>
+      )}
     </div>
   );
 }

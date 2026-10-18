@@ -146,6 +146,10 @@ function pickRandom(pool: readonly string[]): string {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+function getDeterministicPhrase(pool: readonly string[], hour: number): string {
+  return pool[hour % pool.length];
+}
+
 function getIcon(hour: number): typeof Sun {
   if (hour >= 4 && hour < 7) return Sunrise;
   if (hour >= 7 && hour < 12) return Sun;
@@ -164,12 +168,13 @@ function getTimeSlot(hour: number): string {
   return "night";
 }
 
-export function getTimePhrase(hour: number, role: RoleType = "HOD"): TimeResult {
+export function getTimePhrase(hour: number, role: RoleType = "HOD", randomize: boolean = false): TimeResult {
   const slot = getTimeSlot(hour) as keyof typeof HOD_PHRASES;
   const icon = getIcon(hour);
 
   const phrases = role === "COORDINATOR" ? FACULTY_PHRASES : HOD_PHRASES;
+  const pool = phrases[slot];
 
-  const phrase = pickRandom(phrases[slot]);
+  const phrase = randomize ? pickRandom(pool) : getDeterministicPhrase(pool, hour);
   return { phrase, icon };
 }

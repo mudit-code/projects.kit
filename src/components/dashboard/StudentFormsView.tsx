@@ -22,6 +22,8 @@ import {
   FileCheck2
 } from "lucide-react";
 import { DEFAULT_STUDENT_PROFILE, StudentProfileData } from "./EditProfileModal";
+import { StreamBadge } from "@/components/StreamBadge";
+import { isStudentEligibleForForm } from "@/lib/formTargeting";
 
 export type AcademicForm = {
   id: string;
@@ -119,88 +121,67 @@ export function StudentFormsView() {
       // ignore
     }
 
-    // 3. Load initiatives published by HOD (Start a Project)
+    // 3. Load initiatives published by HOD / Faculty (shared single source of truth)
     const dynamicForms: AcademicForm[] = [];
     try {
-      const storedInitiatives = localStorage.getItem("kit_published_initiatives");
-      if (storedInitiatives) {
-        const parsed = JSON.parse(storedInitiatives);
-        parsed.forEach((init: any) => {
-          // Check if initiative targets this student
-          const isTargeted =
-            init.course === prof.course &&
-            (init.stream.includes(prof.stream) || prof.stream.includes(init.stream) || init.stream === "Computer Science & Engineering") &&
-            (init.section === prof.section || init.section === "All" || !init.section);
-
-          if (isTargeted) {
-            const isSub = !!existingSubmissions[init.id];
-            dynamicForms.push({
-              id: init.id,
-              title: `${init.customProjectName || init.projectType} Registration Form`,
-              description: `Mandatory project proposal and team declaration form dispatched by ${init.publishedBy}.`,
-              dispatchedBy: init.publishedBy || "Rahul Singh (HOD)",
-              roleBadge: "HOD",
-              subjectCode: init.subjectCode || "KCS-751",
-              category: init.category || "Academic",
-              course: init.course,
-              stream: init.stream,
-              year: init.year,
-              section: init.section,
-              startDate: init.startDate || "2026-10-15",
-              deadline: init.deadline || "2026-11-30",
-              status: isSub ? "Submitted" : "Open",
-              submissionData: existingSubmissions[init.id],
-            });
-          }
-        });
+      let storedInitiatives = localStorage.getItem("kit_published_initiatives");
+      let list: any[] = storedInitiatives ? JSON.parse(storedInitiatives) : [];
+      if (list.length === 0) {
+        list = [
+          {
+            id: "INIT-BCS751",
+            subjectCode: "BCS751",
+            course: "B.Tech",
+            stream: "Computer Science & Engineering",
+            year: "4th Year",
+            section: "A",
+            category: "Academic",
+            projectType: "Mini Project",
+            customProjectName: "Mini Project",
+            startDate: "2026-10-16",
+            deadline: "2026-11-30",
+            publishedAt: "16 Oct 2026",
+            status: "Active",
+            publishedBy: "Rahul Singh",
+            assignedTo: "self",
+            coordinator: {
+              name: "Rahul Singh",
+              email: "hod@kit.ac.in",
+              phone: "+91 98765 43210",
+              role: "HOD",
+            },
+          },
+        ];
+        localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
       }
+
+      list.forEach((init: any) => {
+        if (isStudentEligibleForForm(prof, init)) {
+          const isSub = !!existingSubmissions[init.id];
+          dynamicForms.push({
+            id: init.id,
+            title: init.customProjectName
+              ? `${init.customProjectName} Registration Form`
+              : `${init.projectType || "Project"} Registration Form`,
+            description: init.description || "",
+            dispatchedBy: init.publishedBy || (init.coordinator?.name ? `${init.coordinator.name} (${init.coordinator.role || "Coordinator"})` : "Rahul Singh (HOD)"),
+            roleBadge: init.assignedTo === "faculty" || init.coordinator?.role === "Faculty" ? "Faculty" : "HOD",
+            subjectCode: init.subjectCode || "BCS751",
+            category: init.category || "Academic",
+            course: init.course,
+            stream: init.stream,
+            year: init.year,
+            section: init.section,
+            startDate: init.startDate || "2026-10-16",
+            deadline: init.deadline || "2026-11-30",
+            status: isSub ? "Submitted" : "Open",
+            submissionData: existingSubmissions[init.id],
+          });
+        }
+      });
     } catch {
       // ignore
     }
-
-    // 4. Default institutional forms if none exist
-    if (dynamicForms.length === 0) {
-      const defaultFormId = "FORM-75101";
-      const isSub = !!existingSubmissions[defaultFormId];
-      dynamicForms.push({
-        id: defaultFormId,
-        title: "Mini Project (Capstone Phase-I) Registration & Proposal Form",
-        description: "Official departmental registration form for final year mini project topic approval, supervisor selection, and team composition.",
-        dispatchedBy: "Rahul Singh (HOD)",
-        roleBadge: "HOD",
-        subjectCode: "KCS-751",
-        category: "Academic",
-        course: "B.Tech",
-        stream: "CSE",
-        year: "4th",
-        section: "B",
-        startDate: "2026-10-15",
-        deadline: "2026-11-30",
-        status: isSub ? "Submitted" : "Open",
-        submissionData: existingSubmissions[defaultFormId],
-      });
-    }
-
-    // Add faculty synopsis form
-    const facultyFormId = "FORM-75102";
-    const isSubFaculty = !!existingSubmissions[facultyFormId];
-    dynamicForms.push({
-      id: facultyFormId,
-      title: "Detailed Project Synopsis & Problem Statement Form",
-      description: "Submission of 2-page project synopsis, literature review matrix, and hardware/software resource requirements.",
-      dispatchedBy: "Dr. A. Sharma (Faculty Project Coordinator)",
-      roleBadge: "Faculty",
-      subjectCode: "KCS-751",
-      category: "Academic",
-      course: "B.Tech",
-      stream: "CSE",
-      year: "4th",
-      section: "B",
-      startDate: "2026-12-01",
-      deadline: "2026-12-20",
-      status: isSubFaculty ? "Submitted" : "Upcoming",
-      submissionData: existingSubmissions[facultyFormId],
-    });
 
     setForms(dynamicForms);
   }, []);
@@ -314,8 +295,10 @@ export function StudentFormsView() {
         {/* Student Cohort Tag */}
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 shadow-2xs self-start sm:self-auto">
           <span className="w-2 h-2 rounded-full bg-[#0D3481]"></span>
-          <span className="text-xs font-bold text-slate-800">
-            {studentProfile.course} {studentProfile.stream} · {studentProfile.year} Year (Sec {studentProfile.section})
+          <span className="text-xs font-bold text-slate-800 inline-flex items-center gap-1">
+            <span>{studentProfile.course}</span>
+            <StreamBadge stream={studentProfile.stream} />
+            <span>· {studentProfile.year} Year (Sec {studentProfile.section})</span>
           </span>
         </div>
       </div>
@@ -399,7 +382,9 @@ export function StudentFormsView() {
 
                   {/* Form Title & Description */}
                   <h3 className="text-base font-bold text-slate-900 leading-snug">{form.title}</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">{form.description}</p>
+                  {form.description ? (
+                    <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">{form.description}</p>
+                  ) : null}
 
                   {/* Metadata Row */}
                   <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-slate-600">
@@ -417,7 +402,11 @@ export function StudentFormsView() {
 
                     <div className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Target: {form.course} {form.stream} · {form.year} Year (Sec {form.section})</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span>Target: {form.course}</span>
+                        <StreamBadge stream={form.stream} />
+                        <span>· {form.year} Year (Sec {form.section})</span>
+                      </span>
                     </div>
                   </div>
                 </div>

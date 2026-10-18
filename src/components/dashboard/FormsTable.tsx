@@ -144,17 +144,16 @@ export function FormsTable() {
   const [initiatives, setInitiatives] = useState<any[]>([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [session, setSession] = useState(() => getActiveSession());
+  const [isMounted, setIsMounted] = useState(false);
+  const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
+    setIsMounted(true);
+    setSession(getActiveSession());
     const loadInitiatives = () => {
       try {
         const stored = localStorage.getItem("kit_published_initiatives");
         let list: any[] = stored ? JSON.parse(stored) : [];
-        list = list.filter((item: any) => {
-          const code = (item.subjectCode || item.code || item.id || "").toString().toUpperCase().replace(/[-\s]/g, "");
-          return code.includes("BCS751");
-        });
 
         if (list.length === 0) {
           list = [
@@ -182,8 +181,8 @@ export function FormsTable() {
               },
             },
           ];
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
         }
-        localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
         setInitiatives(list);
       } catch {
         setInitiatives([]);
@@ -222,11 +221,7 @@ export function FormsTable() {
     setIsRefreshing(true);
     try {
       const stored = localStorage.getItem("kit_published_initiatives");
-      let list = stored ? JSON.parse(stored) : [];
-      list = list.filter((item: any) => {
-        const code = (item.subjectCode || item.code || item.id || "").toString().toUpperCase().replace(/[-\s]/g, "");
-        return code.includes("BCS751");
-      });
+      const list = stored ? JSON.parse(stored) : [];
       setInitiatives(list);
     } catch {
       setInitiatives([]);
@@ -237,11 +232,7 @@ export function FormsTable() {
   };
 
   const projects = useMemo<Project[]>(() => {
-    const mapped = initiatives.map(initiativeToProject);
-    return mapped.filter((p) => {
-      const code = (p.code || "").toUpperCase().replace(/[-\s]/g, "");
-      return code.includes("BCS751");
-    });
+    return initiatives.map(initiativeToProject);
   }, [initiatives]);
 
   const isCompleted = (p: Project) => {
@@ -483,7 +474,7 @@ export function FormsTable() {
               Reset filters
             </button>
           )}
-          {session?.role === "HOD" && (
+          {isMounted && session?.role === "HOD" && (
             <Link
               href="/hod/projects/new"
               className="px-3.5 py-1.5 rounded-xl bg-[#0D3481] hover:bg-[#0b2b6b] text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
@@ -871,14 +862,18 @@ export function FormsTable() {
                     {/* Action */}
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setSelectedProject(p)}
+                        <Link
+                          href={
+                            session?.role === "COORDINATOR"
+                              ? `/coordinator/forms/${encodeURIComponent(String(p.id))}`
+                              : `/hod/forms/${encodeURIComponent(String(p.id))}`
+                          }
                           className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                          title="View details"
+                          title="View student submissions"
                         >
                           <Eye size={12} />
                           <span>View</span>
-                        </button>
+                        </Link>
                       </div>
                     </td>
                   </tr>
@@ -921,94 +916,6 @@ export function FormsTable() {
           </div>
         </div>
       </div>
-
-      {/* FORM DETAILS MODAL */}
-      {selectedProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-2xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono font-bold text-[#0D3481] bg-[#0D3481]/10 px-2 py-0.5 rounded-md">
-                    {selectedProject.code}
-                  </span>
-                  <span className="text-[10px] font-bold text-[#0D3481] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                    Published Form
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-slate-900 mt-2 leading-snug">
-                  {selectedProject.title}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedProject(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 py-2 text-xs border-y border-slate-100">
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Academic Session</span>
-                <p className="font-bold text-slate-800">{selectedProject.session}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Status</span>
-                <div className="mt-0.5">{getStatusBadge(isCompleted(selectedProject) ? "Completed" : "Ongoing")}</div>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Branch & Degree</span>
-                <p className="font-bold text-slate-800">{selectedProject.branch} ({selectedProject.course})</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Category</span>
-                <p className="font-bold text-slate-800">{selectedProject.domain}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Section</span>
-                <p className="font-bold text-slate-800">
-                  Section {getSectionLetter(selectedProject)}
-                </p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-semibold uppercase text-[10px]">Coordinator / Guide</span>
-                <p className="font-bold text-slate-800">{selectedProject.facultyGuide}</p>
-              </div>
-              {selectedProject.deadline && (
-                <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-                  <span className="text-slate-400 font-semibold uppercase text-[10px]">Submission Window</span>
-                  <p className="font-semibold text-slate-800 mt-0.5 font-mono text-[11px]">
-                    {selectedProject.startDate} &rarr; <span className="text-red-600 font-bold">{selectedProject.deadline}</span>
-                  </p>
-                </div>
-              )}
-              {selectedProject.coordinator?.email && (
-                <div className="col-span-2 text-[11px] text-slate-500">
-                  Coordinator Contact: <span className="font-semibold text-slate-700">{selectedProject.coordinator.email}</span>
-                  {selectedProject.coordinator.phone && ` · ${selectedProject.coordinator.phone}`}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between gap-2 pt-2">
-              <button
-                onClick={() => handleDeleteInitiative(String(selectedProject.id))}
-                className="px-3 py-1.5 text-xs font-semibold rounded-xl text-red-600 hover:bg-red-50 border border-red-200 transition-colors cursor-pointer inline-flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Remove Form</span>
-              </button>
-              <button
-                onClick={() => setSelectedProject(null)}
-                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

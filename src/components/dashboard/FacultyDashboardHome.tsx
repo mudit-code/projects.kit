@@ -16,10 +16,16 @@ import Link from "next/link";
 import { getTimePhrase } from "@/lib/timePhrases";
 
 export function FacultyDashboardHome() {
-  const [timeData] = useState(() => {
-    const hour = new Date().getHours();
-    return getTimePhrase(hour, "COORDINATOR");
+  const [timeData, setTimeData] = useState(() => {
+    // Deterministic on initial render/SSR
+    return getTimePhrase(12, "COORDINATOR");
   });
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setTimeData(getTimePhrase(hour, "COORDINATOR"));
+  }, []);
+
   const TimeIcon = timeData.icon;
 
   return (
@@ -32,12 +38,12 @@ export function FacultyDashboardHome() {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white text-[#0D3481] border border-slate-200/80 shadow-2xs">
-              <GraduationCap className="w-3.5 h-3.5 text-[#0D3481]" />
+              <BookOpen className="w-3.5 h-3.5 text-[#0D3481]" />
               Faculty · Project Coordinator
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
+            <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
               <TimeIcon className="w-7 h-7 text-[#0D3481]" />
-              {timeData.phrase}
+              <span suppressHydrationWarning>{timeData.phrase}</span>
             </h1>
             <p className="text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
               Review assigned projects, manage student submissions, and coordinate with the department seamlessly.

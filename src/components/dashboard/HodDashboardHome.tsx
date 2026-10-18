@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   FolderPlus,
   Users,
@@ -36,10 +36,16 @@ export type ProjectInitiative = {
 };
 
 export function HodDashboardHome() {
-  const [timeData] = useState(() => {
-    const hour = new Date().getHours();
-    return getTimePhrase(hour, "HOD");
+  const [timeData, setTimeData] = useState(() => {
+    // Deterministic on initial render/SSR
+    return getTimePhrase(12, "HOD");
   });
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    setTimeData(getTimePhrase(hour, "HOD"));
+  }, []);
+
   const TimeIcon = timeData.icon;
 
   return (
@@ -51,9 +57,9 @@ export function HodDashboardHome() {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
+            <h1 suppressHydrationWarning className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
               <TimeIcon className="w-7 h-7 text-[#0D3481]" />
-              {timeData.phrase}
+              <span suppressHydrationWarning>{timeData.phrase}</span>
             </h1>
             <p className="text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
               Initiate, oversee, and publish departmental project workflows, rubric assessments, and student batch milestones.

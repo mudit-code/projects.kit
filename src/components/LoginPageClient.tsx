@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Mail, ArrowRight, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { Lock, Mail, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { RoleType, ROLE_DATA, saveActiveSession } from "@/lib/auth";
 import { RoleSelector } from "@/components/RoleSelector";
+import { LOGOS } from "@/lib/logos";
 
 export function LoginPageClient({
   onLoginSuccess,
@@ -16,14 +17,15 @@ export function LoginPageClient({
   const router = useRouter();
   const [role, setRole] = useState<RoleType>("HOD");
   const [email, setEmail] = useState(ROLE_DATA.HOD.email);
-  const [password, setPassword] = useState("••••••••");
+  const [password, setPassword] = useState("kit@projects2026");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleRoleChange = (newRole: RoleType) => {
     setRole(newRole);
     setEmail(ROLE_DATA[newRole].email);
-    setPassword("••••••••");
+    setPassword("kit@projects2026");
     setError("");
   };
 
@@ -66,7 +68,7 @@ export function LoginPageClient({
               type="button"
               className="absolute left-6 top-6 text-xs text-slate-400 hover:text-slate-700 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
             >
-              ← Student Portal
+              ← Back
             </button>
           )}
           {/* Header with KIT Logo */}
@@ -74,7 +76,7 @@ export function LoginPageClient({
             <div className="h-14 sm:h-16 max-w-[240px] flex items-center justify-center mb-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/kit.png"
+                src={LOGOS.kit}
                 alt="KIT Logo"
                 className="max-h-full w-auto object-contain"
               />
@@ -109,7 +111,7 @@ export function LoginPageClient({
                 Institutional Email
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="email"
                   value={email}
@@ -132,15 +134,27 @@ export function LoginPageClient({
                 </span>
               </div>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] bg-white transition-all text-slate-800"
+                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] bg-white transition-all text-slate-800"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors cursor-pointer"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -170,14 +184,8 @@ export function LoginPageClient({
           </form>
 
           {/* Footer inside card */}
-          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Campus SSO Enabled</span>
-            </div>
-            <div className="font-semibold text-slate-400">
-              Session: 2026-27
-            </div>
+          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center text-[11px] font-semibold text-slate-400">
+            Session: 2026-27
           </div>
         </div>
 

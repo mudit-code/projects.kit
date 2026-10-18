@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LOGOS } from "@/lib/logos";
 
 export function Logo({ 
   className = "", 
@@ -19,7 +20,7 @@ export function Logo({
         <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-xs flex items-center justify-center p-1.5 bg-white border border-slate-200 group-hover:scale-105 transition-transform shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/kit.png"
+            src={LOGOS.kit}
             alt="KIT Logo"
             className="w-full h-full object-contain"
           />
@@ -29,7 +30,7 @@ export function Logo({
           <div className="relative h-9 max-w-[160px] flex items-center shrink-0 group-hover:scale-105 transition-transform">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/kit.png"
+              src={LOGOS.kit}
               alt="KIT Logo"
               className="h-9 w-auto max-h-9 object-contain"
             />

@@ -29,15 +29,15 @@ export interface StudentProfileData {
 }
 
 export const DEFAULT_STUDENT_PROFILE: StudentProfileData = {
-  name: "Test Student",
+  name: "Aashutosh Verma",
   course: "B.Tech",
-  stream: "CSE",
-  year: "4th",
-  section: "B",
-  rollNo: "2301650100000",
-  afn: "230000",
+  stream: "Computer Science & Engineering",
+  year: "4th Year",
+  section: "A",
+  rollNo: "2301650100001",
+  afn: "232451",
   session: "2023-27",
-  email: "230000@kit.ac.in",
+  email: "232451@kit.ac.in",
 };
 
 interface EditProfileModalProps {
