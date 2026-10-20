@@ -146,20 +146,38 @@ function mapPrismaSubmission(s: any): ServerSubmission {
   };
 }
 
+// In-memory cache for ultra-fast server reads
+let cachedServerForms: ServerForm[] | null = null;
+let formsCacheTimestamp = 0;
+const FORMS_CACHE_TTL_MS = 15_000; // 15 seconds
+
+export function invalidateServerFormsCache() {
+  cachedServerForms = null;
+  formsCacheTimestamp = 0;
+}
+
 export async function getAllServerForms(): Promise<ServerForm[]> {
+  const now = Date.now();
+  if (cachedServerForms && now - formsCacheTimestamp < FORMS_CACHE_TTL_MS) {
+    return cachedServerForms;
+  }
   try {
     const forms = await prisma.form.findMany({
       where: { isTrashed: false },
       orderBy: { createdAt: "desc" },
     });
-    return forms.map(mapPrismaForm);
+    cachedServerForms = forms.map(mapPrismaForm);
+    formsCacheTimestamp = now;
+    return cachedServerForms;
   } catch (err: any) {
+    if (cachedServerForms) return cachedServerForms;
     console.error("Failed to read server forms from database:", err);
     return [];
   }
 }
 
 export async function upsertServerForm(form: ServerForm): Promise<ServerForm> {
+  invalidateServerFormsCache();
   const cleanId = (form.id || `INIT-${Date.now().toString(36).toUpperCase()}`).trim();
 
   const presentationsConfigStr = form.presentationsConfig
@@ -170,7 +188,7 @@ export async function upsertServerForm(form: ServerForm): Promise<ServerForm> {
 
   const data = {
     subjectCode: form.subjectCode || "BCS751",
-    title: form.title || "Project Form",
+    title: form.title || (form.customProjectName ? `${form.customProjectName} Registration Form` : (form.projectType ? `${form.projectType} Registration Form` : "Project Form")),
     course: form.course || "B.Tech",
     stream: form.stream || "Computer Science & Engineering",
     year: form.year || "4th Year",
@@ -207,6 +225,7 @@ export async function upsertServerForm(form: ServerForm): Promise<ServerForm> {
     },
   });
 
+  invalidateServerFormsCache();
   return mapPrismaForm(saved);
 }
 
@@ -242,11 +261,8 @@ export async function getServerForm(
     return mapPrismaForm(form);
   }
 
-  // If not found in database, auto-provision if fallbackMeta was explicitly supplied
-  if (
-    fallbackMeta &&
-    (fallbackMeta.subjectCode || fallbackMeta.title || cleanId.startsWith("INIT-"))
-  ) {
+  // If not found in database, return in-memory representation if fallbackMeta was explicitly supplied (without persisting synthetic data to DB)
+  if (fallbackMeta && (fallbackMeta.subjectCode || fallbackMeta.title)) {
     const defaultSubjectCode = fallbackMeta?.subjectCode || "BCS751";
     const defaultForm: ServerForm = {
       id: cleanId,
@@ -267,15 +283,27 @@ export async function getServerForm(
         role: fallbackMeta?.coordinator?.role || "HOD",
       },
     };
-
-    await upsertServerForm(defaultForm);
     return defaultForm;
   }
 
   return null;
 }
 
+// In-memory cache for ultra-fast submissions reads
+let cachedServerSubmissions: Record<string, ServerSubmission[]> | null = null;
+let subsCacheTimestamp = 0;
+const SUBS_CACHE_TTL_MS = 15_000; // 15 seconds
+
+export function invalidateServerSubmissionsCache() {
+  cachedServerSubmissions = null;
+  subsCacheTimestamp = 0;
+}
+
 export async function getAllServerSubmissions(): Promise<Record<string, ServerSubmission[]>> {
+  const now = Date.now();
+  if (cachedServerSubmissions && now - subsCacheTimestamp < SUBS_CACHE_TTL_MS) {
+    return cachedServerSubmissions;
+  }
   try {
     const submissions = await prisma.submission.findMany({
       orderBy: { submittedAt: "desc" },
@@ -288,8 +316,11 @@ export async function getAllServerSubmissions(): Promise<Record<string, ServerSu
       }
       grouped[sub.formId].push(mapPrismaSubmission(sub));
     }
+    cachedServerSubmissions = grouped;
+    subsCacheTimestamp = now;
     return grouped;
   } catch (err) {
+    if (cachedServerSubmissions) return cachedServerSubmissions;
     console.error("Failed to load submissions from database:", err);
     return {};
   }
@@ -298,15 +329,17 @@ export async function getAllServerSubmissions(): Promise<Record<string, ServerSu
 export async function getServerSubmissionsForForm(formId: string): Promise<ServerSubmission[]> {
   const cleanId = decodeURIComponent(formId).trim();
 
-  // Find related form keys
-  const form = await prisma.form.findFirst({
+  // Find all related form keys
+  const matchingForms = await prisma.form.findMany({
     where: {
       OR: [{ id: cleanId }, { subjectCode: cleanId }],
     },
   });
 
   const formIds = [cleanId];
-  if (form && form.id !== cleanId) formIds.push(form.id);
+  for (const f of matchingForms) {
+    if (!formIds.includes(f.id)) formIds.push(f.id);
+  }
 
   const subs = await prisma.submission.findMany({
     where: {
@@ -407,6 +440,7 @@ export async function saveServerSubmission(
     });
   }
 
+  invalidateServerSubmissionsCache();
   return mapPrismaSubmission(savedRecord);
 }
 

@@ -158,41 +158,38 @@ export function ProjectsTable() {
     setIsMounted(true);
     setSession(getActiveSession());
 
-    const loadData = async () => {
-      try {
-        const res = await fetch("/api/forms");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.forms)) {
-            setInitiatives(data.forms);
-            localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
-          }
-        }
-      } catch {
-        const storedInit = localStorage.getItem("kit_published_initiatives");
-        setInitiatives(storedInit ? JSON.parse(storedInit) : []);
-      }
-
-      try {
-        const resSubs = await fetch("/api/submissions");
-        if (resSubs.ok) {
-          const dataSubs = await resSubs.json();
-          if (dataSubs.success && dataSubs.submissions) {
-            const clean = { ...dataSubs.submissions };
-            delete clean["INIT-759402"];
-            delete clean["INIT-BCS751"];
-            delete clean["BCS751"];
-            setPublicSubmissions(clean);
-            localStorage.setItem("kit_public_submissions", JSON.stringify(clean));
-          }
-        }
-      } catch {
-        const rawSubs = localStorage.getItem("kit_public_submissions");
-        const parsed = rawSubs ? JSON.parse(rawSubs) : {};
+    // Instant local cache read on client mount (safe from SSR hydration mismatch)
+    try {
+      const storedInit = localStorage.getItem("kit_published_initiatives");
+      if (storedInit) setInitiatives(JSON.parse(storedInit));
+      const rawSubs = localStorage.getItem("kit_public_submissions");
+      if (rawSubs) {
+        const parsed = JSON.parse(rawSubs);
         delete parsed["INIT-759402"];
         delete parsed["INIT-BCS751"];
         delete parsed["BCS751"];
         setPublicSubmissions(parsed);
+      }
+    } catch {}
+
+    const loadData = async () => {
+      try {
+        const [formsRes, subsRes] = await Promise.all([
+          fetch("/api/forms").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch("/api/submissions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        ]);
+
+        if (formsRes?.success && Array.isArray(formsRes.forms)) {
+          setInitiatives(formsRes.forms);
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(formsRes.forms));
+        }
+
+        if (subsRes?.success && subsRes.submissions) {
+          setPublicSubmissions(subsRes.submissions);
+          localStorage.setItem("kit_public_submissions", JSON.stringify(subsRes.submissions));
+        }
+      } catch {
+        // silent fallback
       }
     };
 
@@ -210,21 +207,17 @@ export function ProjectsTable() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch("/api/forms");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.forms)) {
-          setInitiatives(data.forms);
-          localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
-        }
+      const [res, resSubs] = await Promise.all([
+        fetch("/api/forms").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/submissions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      if (res?.success && Array.isArray(res.forms)) {
+        setInitiatives(res.forms);
+        localStorage.setItem("kit_published_initiatives", JSON.stringify(res.forms));
       }
-      const resSubs = await fetch("/api/submissions");
-      if (resSubs.ok) {
-        const dataSubs = await resSubs.json();
-        if (dataSubs.success && dataSubs.submissions) {
-          setPublicSubmissions(dataSubs.submissions);
-          localStorage.setItem("kit_public_submissions", JSON.stringify(dataSubs.submissions));
-        }
+      if (resSubs?.success && resSubs.submissions) {
+        setPublicSubmissions(resSubs.submissions);
+        localStorage.setItem("kit_public_submissions", JSON.stringify(resSubs.submissions));
       }
     } catch {
       // ignore
@@ -500,7 +493,7 @@ export function ProjectsTable() {
               <FileText size={22} className="text-[#0D3481]" />
               <span>Project Directory</span>
             </span>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+            <span suppressHydrationWarning className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
               {filteredProjects.length}
             </span>
           </h1>

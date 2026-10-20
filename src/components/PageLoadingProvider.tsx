@@ -26,8 +26,8 @@ export function isDashboardPath(path: string | null): boolean {
   if (!path) return false;
   const cleanPath = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   
-  // Public/Auth routes are never dashboard paths
-  if (cleanPath === '/' || cleanPath === '/login' || cleanPath === '/register') {
+  // Public/Auth routes are not dashboard sub-tabs
+  if (cleanPath === '' || cleanPath === '/' || cleanPath === '/login' || cleanPath === '/register' || cleanPath === '/admin') {
     return false;
   }
 
@@ -69,7 +69,7 @@ export const LoadingContext = createContext<LoadingContextType>({
 
 export const useLoading = () => useContext(LoadingContext);
 
-// Utility to cleanly toggle scroll locking on both html and body
+// Utility to cleanly toggle scroll locking on body
 const setScrollLocked = (locked: boolean) => {
   if (typeof document === 'undefined') return;
   if (locked) {
@@ -86,90 +86,38 @@ const setScrollLocked = (locked: boolean) => {
 export function PageLoadingProvider({ children }: { children: React.ReactNode }) {
   const pathnameRef = useRef<string>('');
 
-  // 1. Initial Website Load & Browser Refresh State:
-  // Starts TRUE so that on first visit AND on every browser refresh (F5/reload/hard refresh),
-  // the screen loader appears immediately with NO flash of unfinished page!
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [isInitialFadingOut, setIsInitialFadingOut] = useState(false);
-  const [isInitialComplete, setIsInitialComplete] = useState(false);
-  const initialMountRef = useRef(true);
-
-  // 2. Full-View Loader State (navigation outside dashboard or to login, over 50ms only)
+  // 1. Full-View Heartbeat Loader State (for navigation or global fetches > 100ms outside dashboard)
   const [isFullViewLoading, setIsFullViewLoading] = useState(false);
 
-  // 3. In-Tab Dashboard Loader State (navigation inside dashboard tabs, over 50ms only)
+  // 2. In-Tab Dashboard Heartbeat Loader State (for intra-dashboard tab loads > 100ms)
   const [isDashboardTabLoading, setIsDashboardTabLoading] = useState(false);
+
+  // Completion signal to fill line loader to 100% and dismiss
   const [isNavComplete, setIsNavComplete] = useState(false);
 
   const navTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const failsafeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isNavigatingRef = useRef(false);
+  const activeFetchesRef = useRef<number>(0);
+  const initialMountRef = useRef(true);
 
-  // Promptly reveal site once initial intro animation sequence completes
-  const handleInitialComplete = useCallback(() => {
-    setIsInitialFadingOut(true);
-    const timer = setTimeout(() => {
-      setIsInitialLoading(false);
-    }, 200); // Crisp fade transition into site
-    return () => clearTimeout(timer);
-  }, []);
-
-  // When initial page has finished loading (DOM ready / window load), complete the loader line
-  useEffect(() => {
-    if (!isInitialLoading) return;
-
-    const onReady = () => {
-      setIsInitialComplete(true);
-    };
-
-    // If the document is already fully loaded, signal immediately
-    if (typeof document !== 'undefined' && document.readyState === 'complete') {
-      onReady();
-      return;
-    }
-
-    // Otherwise wait for the load event
-    if (typeof window !== 'undefined') {
-      const handleLoad = () => {
-        onReady();
-      };
-      window.addEventListener('load', handleLoad);
-      // Failsafe: if load event never fires (shouldn't happen), resolve after 5s
-      const fallbackTimer = setTimeout(onReady, 5000);
-      return () => {
-        window.removeEventListener('load', handleLoad);
-        clearTimeout(fallbackTimer);
-      };
-    }
-
-    // SSR fallback
-    onReady();
-  }, [isInitialLoading]);
-
-  // Lock body scroll while full-screen loaders (initial or outside dashboard full-view) are active
-  useEffect(() => {
-    if (isInitialLoading || isFullViewLoading) {
-      setScrollLocked(true);
-    } else {
-      setScrollLocked(false);
-    }
-    return () => {
-      setScrollLocked(false);
-    };
-  }, [isInitialLoading, isFullViewLoading]);
-
-  // Dismiss the loader overlay (called by KitScreenLoader's onComplete after bar animation finishes)
+  // Dismiss loaders
   const dismissNavLoader = useCallback(() => {
     setIsFullViewLoading(false);
     setIsDashboardTabLoading(false);
     setIsNavComplete(false);
   }, []);
 
-  // Signal navigation complete: fills the bar to 100%, loader stays visible until onComplete fires
+  // Complete navigation / fetch loading (fills line to 100%, then dismisses)
   const endNavigation = useCallback(() => {
     if (navTimerRef.current) {
       clearTimeout(navTimerRef.current);
       navTimerRef.current = null;
+    }
+    if (fetchTimerRef.current) {
+      clearTimeout(fetchTimerRef.current);
+      fetchTimerRef.current = null;
     }
     if (failsafeTimerRef.current) {
       clearTimeout(failsafeTimerRef.current);
@@ -177,19 +125,29 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     }
     isNavigatingRef.current = false;
 
-    // If no loader is showing (fast nav completed before debounce), just clean up
-    setIsNavComplete((prev) => {
-      // This runs synchronously — if neither loader is showing, we don't need to animate
-      return true;
-    });
+    // Fill line loader to 100%
+    setIsNavComplete(true);
 
-    // Failsafe: if onComplete somehow doesn't fire, dismiss after 500ms
+    // Failsafe dismissal
     setTimeout(() => {
       dismissNavLoader();
-    }, 500);
+    }, 450);
   }, [dismissNavLoader]);
 
-  // Start subsequent navigation — dashboard tab loads show immediately, others debounce 50ms
+  // Lock body scroll while full-screen loaders are active
+  useEffect(() => {
+    if (isFullViewLoading) {
+      setScrollLocked(true);
+    } else {
+      setScrollLocked(false);
+    }
+    return () => {
+      setScrollLocked(false);
+    };
+  }, [isFullViewLoading]);
+
+  // Start Navigation with 100ms Debounce:
+  // If navigation takes MORE THAN 100ms, instantly show the heartbeat screen loader!
   const startNavigation = useCallback((targetPath: string, options?: StartNavigationOptions) => {
     if (navTimerRef.current) {
       clearTimeout(navTimerRef.current);
@@ -200,11 +158,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
       failsafeTimerRef.current = null;
     }
 
-    // Reset completion state for new navigation
-    setIsNavComplete(false);
-
     const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
-    // If staying on the same path, don't trigger loader
     if (!targetPath || targetPath === currentPath) {
       return;
     }
@@ -214,21 +168,21 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     const isTargetDash = isDashboardPath(targetPath);
     const isInsideDashboard = isCurrentDash && isTargetDash;
 
-    // Dashboard navigation (switching tabs inside dashboard or entering dashboard):
-    // Show ONLY the in-tab loader inside <main>, NEVER the full-screen loader over sidebar/header
-    if (isInsideDashboard || isTargetDash) {
-      setIsDashboardTabLoading(true);
-      setIsFullViewLoading(false);
-    } else {
-      // Non-dashboard navigation (e.g. going to /login, /register): 50ms debounce
-      navTimerRef.current = setTimeout(() => {
-        if (!isNavigatingRef.current) return;
+    // EXACT 100ms threshold:
+    // Only schedule React state update if the navigation takes > 100ms!
+    // This avoids synchronous updates during Next.js router useInsertionEffect.
+    navTimerRef.current = setTimeout(() => {
+      if (!isNavigatingRef.current) return;
+      setIsNavComplete(false);
+      if (isInsideDashboard) {
+        setIsDashboardTabLoading(true);
+        setIsFullViewLoading(false);
+      } else {
         setIsFullViewLoading(true);
         setIsDashboardTabLoading(false);
-      }, 50);
-    }
+      }
+    }, 100);
 
-    // Failsafe: Ensure loading state always resolves promptly even on error/network drop
     failsafeTimerRef.current = setTimeout(() => {
       endNavigation();
     }, 8000);
@@ -236,7 +190,12 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
 
   const startLoading = useCallback(() => {
     isNavigatingRef.current = true;
-    setIsDashboardTabLoading(true);
+    if (navTimerRef.current) clearTimeout(navTimerRef.current);
+    navTimerRef.current = setTimeout(() => {
+      setIsNavComplete(false);
+      setIsFullViewLoading(true);
+    }, 100);
+
     if (failsafeTimerRef.current) clearTimeout(failsafeTimerRef.current);
     failsafeTimerRef.current = setTimeout(() => {
       endNavigation();
@@ -247,7 +206,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     endNavigation();
   }, [endNavigation]);
 
-  // Handle Route Changes when pathname updates
+  // Handle route change when Next.js pathname updates
   const handlePathChange = useCallback((newPath: string) => {
     if (initialMountRef.current) {
       initialMountRef.current = false;
@@ -257,12 +216,57 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
 
     if (pathnameRef.current !== newPath) {
       pathnameRef.current = newPath;
-      // Pathname changed! The target route content has loaded and is now rendering.
       endNavigation();
     }
   }, [endNavigation]);
 
-  // Intercept internal link clicks and history navigation for subsequent loading
+  // Intercept Global fetch calls for any request taking > 100 ms
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const originalFetch = window.fetch;
+
+    window.fetch = async function (...args) {
+      activeFetchesRef.current += 1;
+
+      // Start 100ms threshold timer
+      if (!fetchTimerRef.current && !isFullViewLoading && !isDashboardTabLoading) {
+        fetchTimerRef.current = setTimeout(() => {
+          if (activeFetchesRef.current > 0) {
+            const currentPath = window.location.pathname;
+            if (isDashboardPath(currentPath)) {
+              setIsDashboardTabLoading(true);
+            } else {
+              setIsFullViewLoading(true);
+            }
+            setIsNavComplete(false);
+          }
+        }, 100);
+      }
+
+      try {
+        const response = await originalFetch.apply(this, args);
+        return response;
+      } finally {
+        activeFetchesRef.current = Math.max(0, activeFetchesRef.current - 1);
+
+        if (activeFetchesRef.current === 0) {
+          if (fetchTimerRef.current) {
+            clearTimeout(fetchTimerRef.current);
+            fetchTimerRef.current = null;
+          }
+          // If the loader was triggered because request took > 100ms, finish and dismiss it
+          endNavigation();
+        }
+      }
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [isFullViewLoading, isDashboardTabLoading, endNavigation]);
+
+  // Intercept internal link clicks and browser history navigation
   useEffect(() => {
     const handleLinkClick = (e: MouseEvent) => {
       if (e.defaultPrevented) return;
@@ -281,9 +285,7 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         if (url.origin !== window.location.origin) return;
         if (url.pathname === window.location.pathname) return;
 
-        setTimeout(() => {
-          startNavigation(url.pathname);
-        }, 0);
+        startNavigation(url.pathname);
       } catch {
         // Ignore invalid URL
       }
@@ -291,16 +293,16 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
 
     const handlePopState = () => {
       if (window.location.pathname !== pathnameRef.current) {
+        const nextPath = window.location.pathname;
         setTimeout(() => {
-          startNavigation(window.location.pathname);
+          startNavigation(nextPath);
         }, 0);
       }
     };
 
-    // Listen to pushState for programmatic router.push to DIFFERENT routes
     const originalPushState = window.history.pushState;
-
     window.history.pushState = function (...args) {
+      const res = originalPushState.apply(this, args);
       const url = args[2];
       if (url && typeof url === 'string') {
         try {
@@ -314,10 +316,9 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
           // Ignore
         }
       }
-      return originalPushState.apply(this, args);
+      return res;
     };
 
-    // Error & Cancellation resolution: Ensure loading state always resolves
     const handleError = () => endNavigation();
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') endNavigation();
@@ -355,40 +356,21 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
         <PathnameListener onPathChange={handlePathChange} />
       </Suspense>
 
-      {/* 1. INITIAL LOAD & REFRESH LOADER: Screen loader with download line that completes when page loads */}
-      {isInitialLoading && (
-        <div
-          className={`fixed inset-0 z-[99999] flex items-center justify-center bg-[#F6F5F2] transition-opacity duration-200 ${
-            isInitialFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
-          }`}
-        >
+      {/* 
+        Version 1: Full-view heartbeat screen loader with line loader underneath
+        (for navigation or global fetches taking > 100ms outside dashboards)
+      */}
+      {isFullViewLoading && (
+        <div className="fixed inset-0 z-[99998] flex flex-col items-center justify-center bg-[#F6F5F2]/95 backdrop-blur-md transition-opacity duration-200">
           <KitScreenLoader
-            fullScreen={false}
-            size="md"
-            showText={true}
-            showProgressBar={true}
-            loop={true}
-            duration={1.25}
-            transparent={false}
-            isComplete={isInitialComplete}
-            onComplete={handleInitialComplete}
-          />
-        </div>
-      )}
-
-      {/* 2. FULL-VIEW LOADER: For navigations outside dashboard */}
-      {isFullViewLoading && !isInitialLoading && (
-        <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-[#F6F5F2]/95 backdrop-blur-md">
-          <KitScreenLoader
+            mode="heartbeat"
             fullScreen={false}
             size="md"
             showText={false}
             showProgressBar={true}
-            loop={true}
-            duration={1.25}
-            transparent={true}
             isComplete={isNavComplete}
             onComplete={dismissNavLoader}
+            transparent={true}
           />
         </div>
       )}

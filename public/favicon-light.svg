@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1930 1930">
+  <defs>
+    <mask id="cut-fav-light" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+      <rect width="1930" height="1930" fill="#fff" />
+      <g fill="none" stroke="#000" stroke-width="105">
+        <line x1="928" y1="585" x2="770" y2="1135" />
+        <line x1="928" y1="585" x2="1345" y2="1005" />
+        <line x1="770" y1="1135" x2="1345" y2="1005" />
+        <line x1="770" y1="1135" x2="587" y2="1732" />
+      </g>
+      <g fill="#000">
+        <circle cx="928" cy="585" r="165" />
+        <circle cx="1345" cy="1005" r="165" />
+        <circle cx="770" cy="1135" r="165" />
+      </g>
+    </mask>
+  </defs>
+  <polygon
+    points="965,413.5 1516.5,965 965,1516.5 413.5,965"
+    fill="#1C3A7F"
+    stroke="#1C3A7F"
+    stroke-width="600"
+    stroke-linejoin="round"
+    mask="url(#cut-fav-light)"
+  />
+</svg>

@@ -155,8 +155,8 @@ export function DashboardLayoutClient({
     }
     if (pathname.endsWith("/projects/new")) {
       return {
-        href: pathname.startsWith("/coordinator") ? "/coordinator/projects" : "/hod/projects",
-        label: "Projects",
+        href: pathname.startsWith("/coordinator") ? "/coordinator/forms" : "/hod/forms",
+        label: "Forms",
       };
     }
     return null;
@@ -165,7 +165,12 @@ export function DashboardLayoutClient({
     const syncRole = () => {
       const session = getActiveSession();
       if (!session && !initialRole) {
-        if (typeof window !== "undefined" && window.location.pathname !== "/" && window.location.pathname !== "/login") {
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/" &&
+          window.location.pathname !== "/login" &&
+          !window.location.pathname.startsWith("/admin")
+        ) {
           window.location.href = "/";
         }
         return;
@@ -503,7 +508,7 @@ export function DashboardLayoutClient({
                 title={`Back to ${backLink.label}`}
               >
                 <ArrowLeft className="w-3.5 h-3.5 text-slate-600" />
-                <span>{backLink.label}</span>
+                <span>Back to {backLink.label.replace(/^Back to\s+/i, '')}</span>
               </Link>
             )}
           </div>
@@ -520,13 +525,14 @@ export function DashboardLayoutClient({
           <div className="w-8 shrink-0" />
         </header>
 
-        <main className="flex-1 w-full bg-slate-50 overflow-x-hidden relative min-h-[calc(100vh-4rem)] flex flex-col p-4 sm:p-8">
+        <main className="flex-1 w-full bg-slate-50 overflow-x-hidden relative min-h-0 flex flex-col p-4 sm:px-8 sm:py-4">
           {isDashboardTabLoading && (
             <div 
               aria-label="Loading dashboard content"
               className="absolute inset-0 z-30 flex items-center justify-center bg-slate-50/85 backdrop-blur-xs transition-opacity duration-150"
             >
               <KitScreenLoader
+                mode="heartbeat"
                 fullScreen={false}
                 showText={false}
                 showProgressBar={true}
@@ -536,7 +542,7 @@ export function DashboardLayoutClient({
               />
             </div>
           )}
-          <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
+          <div className="max-w-7xl mx-auto w-full flex-1 min-h-0 flex flex-col">
             {children}
           </div>
         </main>

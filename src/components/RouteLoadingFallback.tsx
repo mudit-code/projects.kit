@@ -11,8 +11,7 @@ export function RouteLoadingFallback({ showText = false }: RouteLoadingFallbackP
   const [shouldShow, setShouldShow] = useState(false);
 
   useEffect(() => {
-    // 0–50 ms: Do not show a loader.
-    // Over 50 ms: Show the centered screenloader.
+    // Over 100 ms: Show the centered screenloader with heartbeat animation.
     const timer = setTimeout(() => {
       setShouldShow(true);
       if (typeof document !== 'undefined') {
@@ -20,7 +19,7 @@ export function RouteLoadingFallback({ showText = false }: RouteLoadingFallbackP
         document.body.style.overflow = 'hidden';
         document.body.style.touchAction = 'none';
       }
-    }, 50);
+    }, 100);
 
     return () => {
       clearTimeout(timer);
@@ -40,10 +39,10 @@ export function RouteLoadingFallback({ showText = false }: RouteLoadingFallbackP
       className="fixed inset-0 z-[99998] flex items-center justify-center bg-[#F6F5F2]/95 backdrop-blur-md pointer-events-auto"
     >
       <KitScreenLoader
+        mode="heartbeat"
         fullScreen={false}
         showText={showText}
-        loop={true}
-        duration={1.25}
+        showProgressBar={true}
         transparent={true}
       />
     </div>

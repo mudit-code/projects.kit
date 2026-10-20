@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Lock, Mail, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { RoleType, ROLE_DATA, saveActiveSession } from "@/lib/auth";
 import { RoleSelector } from "@/components/RoleSelector";
@@ -184,8 +185,14 @@ export function LoginPageClient({
           </form>
 
           {/* Footer inside card */}
-          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center text-[11px] font-semibold text-slate-400">
-            Session: 2026-27
+          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+            <Link
+              href="/admin"
+              className="text-[#0D3481] hover:underline flex items-center gap-1 font-bold"
+            >
+              <span>Staff &amp; Admin Gate &rarr;</span>
+            </Link>
+            <span>Session: 2026-27</span>
           </div>
         </div>
 

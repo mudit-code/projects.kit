@@ -105,15 +105,15 @@ export function isStudentEligibleForForm(
 ): boolean {
   // 1. Course Match
   const formCourse = (form.course || "").trim();
-  if (formCourse && formCourse !== "All" && formCourse !== "All Courses") {
+  if (formCourse && formCourse !== "All" && formCourse !== "All Courses" && formCourse.toUpperCase() !== "ALL") {
     const studentCourse = (student.course || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const expectedCourse = formCourse.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (studentCourse !== expectedCourse) return false;
+    if (studentCourse && expectedCourse && studentCourse !== expectedCourse) return false;
   }
 
   // 2. Year Match
   const formYear = (form.year || "").trim();
-  if (formYear && formYear !== "All" && formYear !== "All Years") {
+  if (formYear && formYear !== "All" && formYear !== "All Years" && formYear.toUpperCase() !== "ALL") {
     const cleanFormYear = formYear.replace(/\s*Year/i, "").trim().toLowerCase();
     const cleanStudentYear = (student.year || "").replace(/\s*Year/i, "").trim().toLowerCase();
     if (cleanFormYear && cleanStudentYear && cleanFormYear !== cleanStudentYear) {
@@ -123,25 +123,25 @@ export function isStudentEligibleForForm(
 
   // 3. Stream / Branch Match
   const formBranch = form.stream || form.branch || "";
-  if (formBranch && formBranch !== "All" && formBranch !== "All Branches") {
+  if (formBranch && formBranch !== "All" && formBranch !== "All Branches" && formBranch.toUpperCase() !== "ALL") {
     const studentCanon = getCanonicalStream(student.stream);
     const formCanon = getCanonicalStream(formBranch);
-    if (studentCanon !== formCanon) {
+    if (studentCanon && formCanon && studentCanon !== formCanon) {
       return false;
     }
   }
 
   // 4. Section Match
-  const formSecRaw = form.section || "";
+  const formSecRaw = (form.section || "").trim();
   if (
     formSecRaw &&
     formSecRaw !== "All" &&
     formSecRaw !== "All Sections" &&
-    formSecRaw !== "All"
+    formSecRaw.toUpperCase() !== "ALL"
   ) {
     const cleanFormSec = formSecRaw.replace(/SEC(?:TION)?\s*/i, "").trim().toUpperCase();
     const cleanStudentSec = (student.section || "").replace(/SEC(?:TION)?\s*/i, "").trim().toUpperCase();
-    if (cleanFormSec && cleanStudentSec !== cleanFormSec) {
+    if (cleanFormSec && cleanStudentSec && cleanStudentSec !== cleanFormSec) {
       return false;
     }
   }

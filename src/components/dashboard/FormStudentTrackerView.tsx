@@ -40,8 +40,13 @@ import {
   RotateCcw,
   UserPlus,
   Settings,
+  Globe,
+  FolderGit2,
+  ExternalLink,
+  Presentation,
 } from "lucide-react";
 import { FormSettingsModal } from "./FormSettingsModal";
+import { CustomDatePicker, getTodayIso } from "@/components/CustomDatePicker";
 
 type SubmissionInfo = {
   formId?: string;
@@ -60,6 +65,15 @@ type SubmissionInfo = {
     email?: string;
     whatsapp?: string;
   };
+  finalSubmission?: {
+    reportFileName?: string;
+    repoUrl?: string;
+    slidesFileName?: string;
+    demoUrl?: string;
+    remarks?: string;
+    submittedAt?: string;
+  };
+  finalSubmissionCompleted?: boolean;
 };
 
 type StudentWithStatus = StudentRecord & {
@@ -568,6 +582,8 @@ export function FormStudentTrackerView({
             roleInTeam: "Team Lead",
             teamMembers: sub.teamMembers,
             leadStudent: sub.student,
+            finalSubmission: sub.finalSubmission,
+            finalSubmissionCompleted: Boolean(sub.finalSubmissionCompleted || sub.finalSubmission),
           };
           break;
         }
@@ -601,6 +617,8 @@ export function FormStudentTrackerView({
             roleInTeam: "Team Member",
             teamMembers: sub.teamMembers || sub.members,
             leadStudent: sub.student,
+            finalSubmission: sub.finalSubmission,
+            finalSubmissionCompleted: Boolean(sub.finalSubmissionCompleted || sub.finalSubmission),
           };
           break;
         }
@@ -1515,6 +1533,12 @@ export function FormStudentTrackerView({
               <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
                 Section {form.section || "A"}
               </span>
+              {(form.finalSubmissionOpen || form.finalSubmission?.enabled) && (
+                <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-0.5 rounded-md inline-flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Final Deliverables Open</span>
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#10334A] tracking-tight">
@@ -1552,7 +1576,7 @@ export function FormStudentTrackerView({
                 />
               </div>
               <div className="text-[11px] text-slate-500 font-medium text-right font-mono">
-                {registeredCount} of {totalCount} submitted
+                {registeredCount} of {totalCount} registered
               </div>
             </div>
 
@@ -1687,7 +1711,7 @@ export function FormStudentTrackerView({
 
         <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
           <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
-            Submitted
+            Registered
           </span>
           <span className="text-2xl sm:text-3xl font-extrabold text-emerald-800 block mt-1">
             {registeredCount}
@@ -2197,6 +2221,105 @@ export function FormStudentTrackerView({
                 </div>
               )}
 
+            {/* Final Deliverables Section (if submitted or if final phase is open) */}
+            {selectedSubmission.submission.finalSubmission ? (
+              <div className="space-y-2.5 p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Final Deliverables Submitted</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-mono">
+                    {selectedSubmission.submission.finalSubmission.submittedAt
+                      ? new Date(selectedSubmission.submission.finalSubmission.submittedAt).toLocaleDateString("en-IN")
+                      : "Completed"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {selectedSubmission.submission.finalSubmission.repoUrl && (
+                    <a
+                      href={selectedSubmission.submission.finalSubmission.repoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-lg bg-white border border-emerald-200 hover:border-emerald-400 text-slate-800 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FolderGit2 className="w-4 h-4 text-slate-700 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-slate-400 block font-semibold">Git Repository</span>
+                          <span className="text-xs font-mono font-bold truncate block group-hover:text-[#0D3481]">
+                            {selectedSubmission.submission.finalSubmission.repoUrl.replace(/^https?:\/\//, "")}
+                          </span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0D3481] shrink-0" />
+                    </a>
+                  )}
+
+                  {selectedSubmission.submission.finalSubmission.demoUrl && (
+                    <a
+                      href={selectedSubmission.submission.finalSubmission.demoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2.5 rounded-lg bg-white border border-emerald-200 hover:border-emerald-400 text-slate-800 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Globe className="w-4 h-4 text-blue-600 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-slate-400 block font-semibold">Prototype / Live Demo</span>
+                          <span className="text-xs font-mono font-bold truncate block group-hover:text-[#0D3481]">
+                            {selectedSubmission.submission.finalSubmission.demoUrl.replace(/^https?:\/\//, "")}
+                          </span>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0D3481] shrink-0" />
+                    </a>
+                  )}
+
+                  {selectedSubmission.submission.finalSubmission.reportFileName && (
+                    <div className="p-2.5 rounded-lg bg-white border border-emerald-200 text-slate-800 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Project Report</span>
+                        <span className="text-xs font-bold truncate block">
+                          {selectedSubmission.submission.finalSubmission.reportFileName}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSubmission.submission.finalSubmission.slidesFileName && (
+                    <div className="p-2.5 rounded-lg bg-white border border-emerald-200 text-slate-800 flex items-center gap-2">
+                      <Presentation className="w-4 h-4 text-amber-500 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Presentation Slides</span>
+                        <span className="text-xs font-bold truncate block">
+                          {selectedSubmission.submission.finalSubmission.slidesFileName}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {selectedSubmission.submission.finalSubmission.remarks && (
+                  <p className="text-[11px] text-slate-600 bg-white/80 p-2 rounded-lg border border-emerald-100">
+                    <strong className="text-slate-800">Student Remarks:</strong> {selectedSubmission.submission.finalSubmission.remarks}
+                  </p>
+                )}
+              </div>
+            ) : (form?.finalSubmissionOpen || form?.finalSubmission?.enabled) ? (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between text-slate-600">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  <span>Final Deliverables Phase is <strong>Active</strong></span>
+                </div>
+                <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  Pending student upload
+                </span>
+              </div>
+            ) : null}
+
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 gap-2">
               <button
                 type="button"
@@ -2243,14 +2366,17 @@ export function FormStudentTrackerView({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">
-                New Deadline Date
-              </label>
-              <input
-                type="date"
+              <CustomDatePicker
+                label="New Deadline Date"
                 value={newDeadlineDate}
-                onChange={(e) => setNewDeadlineDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                onChange={(val) => setNewDeadlineDate(val)}
+                minDate={getTodayIso()}
+                ruleBadge="Rule: Today or future"
+                presets={[
+                  { label: "+7 Days", daysFromBase: 7 },
+                  { label: "+15 Days", daysFromBase: 15 },
+                  { label: "+30 Days", daysFromBase: 30 },
+                ]}
               />
             </div>
 
@@ -2762,7 +2888,7 @@ export function FormStudentTrackerView({
                   <span className="text-slate-500 font-medium">Status Change:</span>
                   <div className="flex items-center gap-1.5 font-bold">
                     <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      Submitted
+                      Registered
                     </span>
                     <span className="text-slate-400 font-mono">→</span>
                     <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">

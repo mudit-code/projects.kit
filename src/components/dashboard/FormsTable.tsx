@@ -150,15 +150,22 @@ export function FormsTable() {
   useEffect(() => {
     setIsMounted(true);
     setSession(getActiveSession());
+
+    // Instant local cache read on client mount (safe from SSR hydration mismatch)
+    try {
+      const stored = localStorage.getItem("kit_published_initiatives");
+      if (stored) {
+        setInitiatives(JSON.parse(stored));
+      }
+    } catch {}
     const loadInitiatives = async () => {
       try {
         const res = await fetch("/api/forms");
         if (res.ok) {
           const data = await res.json();
           if (data.success && Array.isArray(data.forms)) {
-            const valid = data.forms.filter((f: any) => f.id !== "INIT-759402" && f.id !== "INIT-BCS751");
-            setInitiatives(valid);
-            localStorage.setItem("kit_published_initiatives", JSON.stringify(valid));
+            setInitiatives(data.forms);
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(data.forms));
             return;
           }
         }
@@ -168,9 +175,8 @@ export function FormsTable() {
       try {
         const stored = localStorage.getItem("kit_published_initiatives");
         const list: any[] = stored ? JSON.parse(stored) : [];
-        const valid = list.filter((f: any) => f.id !== "INIT-759402" && f.id !== "INIT-BCS751");
-        localStorage.setItem("kit_published_initiatives", JSON.stringify(valid));
-        setInitiatives(valid);
+        localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
+        setInitiatives(list);
       } catch {
         setInitiatives([]);
       }
@@ -454,7 +460,7 @@ export function FormsTable() {
               <FileCheck2 size={22} className="text-[#0D3481]" />
               <span>Forms</span>
             </span>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+            <span suppressHydrationWarning className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
               {filteredProjects.length}
             </span>
           </h1>

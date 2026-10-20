@@ -76,6 +76,7 @@ export function saveActiveSession(session: UserSession) {
   const str = JSON.stringify(session);
   try {
     localStorage.setItem(AUTH_COOKIE_NAME, str);
+    localStorage.setItem("kit_last_activity_time", Date.now().toString());
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=${encodeURIComponent(str)}; path=/; max-age=604800; SameSite=Lax`;
 
@@ -95,6 +96,7 @@ export function clearActiveSession() {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(AUTH_COOKIE_NAME);
+    localStorage.removeItem("kit_last_activity_time");
   } catch {}
   document.cookie = `${AUTH_COOKIE_NAME}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
 
@@ -159,7 +161,13 @@ export function getRoleHomeRoute(role?: RoleType | null): string {
 
 export function isRouteAllowedForRole(pathname: string, role: RoleType): boolean {
   // Public routes
-  if (pathname === "/" || pathname === "/login" || pathname === "/register") {
+  if (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/")
+  ) {
     return true;
   }
 

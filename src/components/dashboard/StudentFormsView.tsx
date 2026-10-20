@@ -121,21 +121,36 @@ export function StudentFormsView() {
       // ignore
     }
 
-    // 3. Load initiatives published by HOD / Faculty from real DB
-    const dynamicForms: AcademicForm[] = [];
-    try {
-      let storedInitiatives = localStorage.getItem("kit_published_initiatives");
-      let list: any[] = storedInitiatives ? JSON.parse(storedInitiatives) : [];
-      list = list.filter((init: any) => init.id !== "INIT-759402" && init.id !== "INIT-BCS751");
+    // 3. Load initiatives published by HOD / Faculty from real DB / API
+    const loadForms = async () => {
+      let list: any[] = [];
+      try {
+        const res = await fetch("/api/forms");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.forms)) {
+            list = data.forms;
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(list));
+          }
+        }
+      } catch {}
 
+      if (list.length === 0) {
+        try {
+          const storedInitiatives = localStorage.getItem("kit_published_initiatives");
+          if (storedInitiatives) list = JSON.parse(storedInitiatives);
+        } catch {}
+      }
+
+      const dynamicForms: AcademicForm[] = [];
       list.forEach((init: any) => {
         if (isStudentEligibleForForm(prof, init)) {
           const isSub = !!existingSubmissions[init.id];
           dynamicForms.push({
             id: init.id,
-            title: init.customProjectName
+            title: init.title || (init.customProjectName
               ? `${init.customProjectName} Registration Form`
-              : `${init.projectType || "Project"} Registration Form`,
+              : `${init.projectType || "Project"} Registration Form`),
             description: init.description || "",
             dispatchedBy: init.publishedBy || (init.coordinator?.name ? `${init.coordinator.name} (${init.coordinator.role || "Coordinator"})` : "Rahul Singh (HOD)"),
             roleBadge: init.assignedTo === "faculty" || init.coordinator?.role === "Faculty" ? "Faculty" : "HOD",
@@ -152,11 +167,11 @@ export function StudentFormsView() {
           });
         }
       });
-    } catch {
-      // ignore
-    }
 
-    setForms(dynamicForms);
+      setForms(dynamicForms);
+    };
+
+    loadForms();
   }, []);
 
   const handleOpenSubmit = (form: AcademicForm) => {

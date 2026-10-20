@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>projects.kit intro</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@700;900&display=swap">
+<style>
+:root{--bg:#F6F5F2;--ink:#0B2A6F;--brand:#1C3A7F;--line:#D0D5DD;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B1220;--ink:#E6ECFA;--brand:#3D6FDB;--line:#344054}}
+:root[data-theme="dark"]{--bg:#0B1220;--ink:#E6ECFA;--brand:#3D6FDB;--line:#344054}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Calibri,Carlito,Lato,sans-serif;display:flex;flex-direction:column}
+.stage{flex:1;position:relative;overflow:hidden}
+.hold *{animation-play-state:paused}
+.wm{position:absolute;inset:0;z-index:2;margin:auto;width:max-content;height:max-content;pointer-events:none;font-size:clamp(40px,11vw,76px);font-weight:700;display:flex;align-items:baseline;white-space:nowrap;text-rendering:geometricPrecision;-webkit-font-smoothing:antialiased}
+.w{display:inline-block;opacity:0;animation:rise .9s cubic-bezier(.22,1,.36,1) forwards}
+.a{animation-delay:.15s}
+.k{animation-delay:.8s}
+.c{display:inline-block;animation:er .18s ease-in var(--d) forwards}
+.pp{display:inline-grid;align-items:baseline;justify-items:start;animation:ptilt .45s cubic-bezier(.65,0,.35,1) 2.85s forwards,pmove .7s cubic-bezier(.65,0,.35,1) 3.3s forwards,pcol .4s ease 3.5s forwards,pfade .7s ease 4s forwards}
+.gl{grid-area:1/1;animation:out .25s ease 2.55s forwards}
+.gu{grid-area:1/1;opacity:0;animation:gin .3s cubic-bezier(.22,1,.36,1) 2.55s forwards}
+.dot{display:inline-block;width:.2em;height:.2em;margin:0 .1em;background:var(--brand);border-radius:.05em;transform:rotate(45deg) scale(0);animation:dotin .6s cubic-bezier(.22,1.4,.4,1) .6s forwards,out .18s ease-in 2.05s forwards}
+.logo{position:absolute;inset:0;z-index:1;margin:auto;width:min(46vw,200px);height:min(46vw,200px);opacity:0;transform:scale(.2) rotate(-90deg);animation:pop .8s cubic-bezier(.2,1.3,.3,1) 2.9s forwards,lbeat .9s ease-out 3.95s}
+svg{display:block;width:100%;height:100%}
+.ed{stroke-dasharray:1;stroke-dashoffset:1;animation:draw .5s ease-out forwards}
+.e1{animation-delay:3.9s}.e2{animation-delay:4s}.e3{animation-delay:4.1s}.e4{animation-delay:4.2s}
+.np{transform-box:fill-box;transform-origin:center;transform:scale(0);animation:npop .45s cubic-bezier(.2,1.6,.4,1) forwards}
+.n1{animation-delay:3.85s}.n2{animation-delay:3.95s}.n3{animation-delay:4.05s}
+.pl{transform-box:fill-box;transform-origin:center}
+.done .pl{animation:beat 1.4s ease-in-out infinite}
+.done .n2 .pl{animation-delay:.12s}
+.done .n3 .pl{animation-delay:.24s}
+.lo .wm{display:none}
+.lo .logo{animation:none;opacity:1;transform:none}
+.lo .ed{animation:none;stroke-dashoffset:0}
+.lo .np{animation:none;transform:scale(1)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.ctl{display:flex;gap:8px;justify-content:center;padding:16px}
+.ctl button{height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink);font:700 14px Calibri,Carlito,Lato,sans-serif;cursor:pointer}
+@keyframes rise{from{opacity:0;transform:translate3d(0,12px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+@keyframes er{from{opacity:1;transform:translate3d(0,0,0)}to{opacity:0;transform:translate3d(-6px,0,0)}}
+@keyframes out{from{opacity:1}to{opacity:0}}
+@keyframes gin{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+@keyframes ptilt{from{transform:translate3d(0,0,0) rotate(0deg) scale(1)}to{transform:translate3d(0,0,0) rotate(16deg) scale(1)}}
+@keyframes pmove{from{transform:translate3d(0,0,0) rotate(16deg) scale(1)}to{transform:translate3d(var(--dx,0px),var(--dy,0px),0) rotate(16deg) scale(var(--s,2))}}
+@keyframes pcol{from{color:var(--ink)}to{color:var(--bg)}}
+@keyframes pfade{from{opacity:1}to{opacity:0}}
+@keyframes dotin{to{transform:rotate(45deg) scale(1)}}
+@keyframes pop{to{opacity:1;transform:none}}
+@keyframes lbeat{0%,100%{transform:scale(1)}25%{transform:scale(1.07)}45%{transform:scale(.99)}65%{transform:scale(1.035)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes npop{to{transform:scale(1)}}
+@keyframes beat{0%,56%,100%{transform:scale(1)}14%{transform:scale(.82)}28%{transform:scale(1)}42%{transform:scale(.9)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important}.wm{display:none}}
+</style>
+</head>
+<body>
+<div class="stage hold" id="stage">
+<div class="wm" aria-hidden="true"><span class="w a"><span class="pp"><span class="gl">p</span><span class="gu">P</span></span><span class="c" style="--d:2.4s">r</span><span class="c" style="--d:2.35s">o</span><span class="c" style="--d:2.3s">j</span><span class="c" style="--d:2.25s">e</span><span class="c" style="--d:2.2s">c</span><span class="c" style="--d:2.15s">t</span><span class="c" style="--d:2.1s">s</span></span><span class="dot"></span><span class="w k"><span class="c" style="--d:2s">k</span><span class="c" style="--d:1.95s">i</span><span class="c" style="--d:1.9s">t</span></span></div>
+<div class="logo">
+<svg viewBox="0 0 1930 1930" role="img" aria-label="projects.kit logo">
+<defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+<rect width="1930" height="1930" fill="#fff"/>
+<g fill="none" stroke="#000" stroke-width="105">
+<path class="ed e1" pathLength="1" d="M928 585L770 1135"/>
+<path class="ed e2" pathLength="1" d="M928 585L1345 1005"/>
+<path class="ed e3" pathLength="1" d="M770 1135L1345 1005"/>
+<path class="ed e4" pathLength="1" d="M770 1135L587 1732"/>
+</g>
+<g fill="#000">
+<g class="np n1"><circle class="pl" cx="928" cy="585" r="165"/></g>
+<g class="np n2"><circle class="pl" cx="1345" cy="1005" r="165"/></g>
+<g class="np n3"><circle class="pl" cx="770" cy="1135" r="165"/></g>
+</g>
+</mask></defs>
+<polygon points="965,413.5 1516.5,965 965,1516.5 413.5,965" fill="var(--brand)" stroke="var(--brand)" stroke-width="600" stroke-linejoin="round" mask="url(#cut)"/>
+</svg>
+</div>
+<div role="status" class="sr">Loading</div>
+</div>
+<div class="ctl"><button onclick="start()">Replay intro</button><button onclick="start('loader')">Heartbeat only</button></div>
+<script>
+var t;
+function prep(s){
+  var p=s.querySelector('.pp');
+  if(!p||!p.getBoundingClientRect){return;}
+  var r=p.getBoundingClientRect(), sr=s.getBoundingClientRect(), cs=getComputedStyle(p);
+  var c=document.createElement('canvas').getContext('2d');
+  c.font=cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+  var m=c.measureText('P');
+  var cap=m.actualBoundingBoxAscent;
+  var fa=m.fontBoundingBoxAscent||r.height*0.8;
+  var size=Math.min(window.innerWidth*0.46,200), L=size/1930;
+  var sc=(size*0.61)/cap;
+  var ox=r.left+r.width/2, oy=r.top+r.height/2;
+  var gy=r.top+fa-cap/2;
+  var th=16*Math.PI/180, vy=gy-oy;
+  s.style.setProperty('--dx',(sr.left+sr.width/2-ox+92*L+sc*vy*Math.sin(th))+'px');
+  s.style.setProperty('--dy',(sr.top+sr.height/2-oy+45*L-sc*vy*Math.cos(th))+'px');
+  s.style.setProperty('--s',sc);
+}
+function start(mode){
+  clearTimeout(t);
+  var go=function(){
+    var old=document.getElementById('stage');
+    var s=old.cloneNode(true);
+    s.className='stage'+(mode==='loader'?' lo done':'');
+    old.replaceWith(s);
+    if(mode!=='loader'){prep(s);t=setTimeout(function(){s.classList.add('done');},4900);}
+  };
+  var f=(document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve();
+  Promise.race([f,new Promise(function(r){setTimeout(r,1500);})]).then(go);
+}
+start();
+</script>
+</body>
+</html>

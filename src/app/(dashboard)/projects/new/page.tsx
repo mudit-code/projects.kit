@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft,
   FolderPlus,
   Calendar,
   Layers,
@@ -18,24 +17,66 @@ import {
   ShieldCheck,
   FileCode2,
   UserCheck,
-  UserCog
+  UserCog,
+  GraduationCap,
 } from "lucide-react";
+import { DynamicSelect } from "@/components/DynamicSelect";
+import {
+  CustomDatePicker,
+  getTodayIso,
+  daysBetween,
+  formatDisplayDate,
+  formatToIsoDate,
+  parseLocalDate,
+} from "@/components/CustomDatePicker";
 
-const COURSES = ["B.Tech", "MCA", "M.Tech"];
+const COURSES = [
+  { value: "B.Tech", label: "B.Tech", description: "Bachelor of Technology" },
+  { value: "MCA", label: "MCA", description: "Master of Computer Applications" },
+  { value: "M.Tech", label: "M.Tech", description: "Master of Technology" },
+];
 
 const STREAMS = [
-  "Computer Science & Engineering",
-  "Computer Science (AI & ML)",
-  "Information Technology",
-  "Biotechnology",
-  "Electronics & Communication",
-  "Mechanical Engineering",
-  "Electrical & Electronics",
+  {
+    value: "Computer Science & Engineering",
+    label: "CSE",
+    description: "Computer Science & Engineering",
+  },
+  {
+    value: "Computer Science (AI & ML)",
+    label: "CS (AIML)",
+    description: "Computer Science & Engineering (AI & ML)",
+  },
+  {
+    value: "Information Technology",
+    label: "IT",
+    description: "Information Technology",
+  },
+  {
+    value: "Electronics & Communication",
+    label: "ECE",
+    description: "Electronics & Communication Engineering",
+  },
+  {
+    value: "Mechanical Engineering",
+    label: "ME",
+    description: "Mechanical Engineering",
+  },
+  {
+    value: "Electrical & Electronics",
+    label: "EE",
+    description: "Electrical & Electronics Engineering",
+  },
+  {
+    value: "Biotechnology",
+    label: "BT",
+    description: "Biotechnology",
+  },
 ];
 
 const YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
-const SECTIONS = ["A", "B", "C", "D", "E", "F"];
+const SECTIONS = ["All", "A", "B", "C", "D", "E", "F"];
 
 export default function StartProjectPage() {
   const router = useRouter();
@@ -44,7 +85,7 @@ export default function StartProjectPage() {
   const [course, setCourse] = useState("B.Tech");
   const [stream, setStream] = useState("Computer Science & Engineering");
   const [year, setYear] = useState("4th Year");
-  const [section, setSection] = useState("A");
+  const [section, setSection] = useState("All");
 
   // Category
   const [category, setCategory] = useState<"Academic" | "Non-Academic">("Academic");
@@ -59,13 +100,42 @@ export default function StartProjectPage() {
   const [facultyEmail, setFacultyEmail] = useState("");
   const [facultyPhone, setFacultyPhone] = useState("");
 
-  // Dates
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
+  // Dates (enforcing local date parsing & validation rules)
+  const [startDate, setStartDate] = useState(() => getTodayIso());
   const [deadline, setDeadline] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 45); // default 45 days
-    return d.toISOString().split("T")[0];
+    return formatToIsoDate(d);
   });
+
+  // Date change handlers enforcing rules:
+  // Rule 1: don't let them select a start date before today
+  // Rule 2: don't let user select a deadline before start date
+  const handleStartDateChange = (newStart: string) => {
+    const today = getTodayIso();
+    let validatedStart = newStart;
+    if (validatedStart < today) {
+      validatedStart = today;
+    }
+    setStartDate(validatedStart);
+
+    // If current deadline is earlier than the new start date, auto-advance deadline
+    if (deadline < validatedStart) {
+      const d = parseLocalDate(validatedStart) || new Date();
+      d.setDate(d.getDate() + 30);
+      setDeadline(formatToIsoDate(d));
+    }
+    setErrorMsg("");
+  };
+
+  const handleDeadlineChange = (newDeadline: string) => {
+    if (newDeadline < startDate) {
+      setErrorMsg("Deadline cannot be earlier than start date");
+      return;
+    }
+    setDeadline(newDeadline);
+    setErrorMsg("");
+  };
 
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,15 +188,26 @@ export default function StartProjectPage() {
       return;
     }
 
-    if (new Date(startDate) > new Date(deadline)) {
+    const today = getTodayIso();
+    if (startDate < today) {
+      setErrorMsg(`Start date cannot be in the past (before today: ${formatDisplayDate(today)})`);
+      return;
+    }
+
+    if (deadline < startDate) {
       setErrorMsg("Deadline cannot be earlier than start date");
       return;
     }
 
     setIsSubmitting(true);
 
+    const formTitle = projectType === "Other" && customProjectName.trim()
+      ? `${customProjectName.trim()} Registration Form`
+      : `${projectType || "Project"} Registration Form`;
+
     const newInitiative = {
       id: `INIT-${Date.now().toString().slice(-6)}`,
+      title: formTitle,
       course,
       stream,
       year,
@@ -191,36 +272,26 @@ export default function StartProjectPage() {
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 pb-12">
-        {/* Navigation Breadcrumb & Back */}
-        <div className="flex items-center justify-between">
-          <Link
-            href="/hod/forms"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-[#0D3481] transition-colors group"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-            <span>Back to Forms</span>
-          </Link>
-
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-[#0D3481]/10 text-[#0D3481] border border-[#0D3481]/20">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            HOD Project Initiation
-          </span>
-        </div>
-
         {/* Page Title Header */}
         <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-[#0D3481]/10 text-[#0D3481] flex items-center justify-center font-bold shadow-2xs">
-              <FolderPlus className="w-6 h-6" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-[#0D3481]/10 text-[#0D3481] flex items-center justify-center font-bold shadow-2xs shrink-0">
+                <FolderPlus className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                  Start a New Project
+                </h1>
+                <p className="text-xs text-slate-500 mt-1">
+                  Configure course, stream, subject code, and submission windows to publish to student cohorts.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-                Start a New Project
-              </h1>
-              <p className="text-xs text-slate-500 mt-1">
-                Configure course, stream, subject code, and submission windows to publish to student cohorts.
-              </p>
-            </div>
+            <span className="self-start sm:self-center inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-[#0D3481]/10 text-[#0D3481] border border-[#0D3481]/20 shrink-0">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              HOD Project Initiation
+            </span>
           </div>
         </div>
 
@@ -261,74 +332,71 @@ export default function StartProjectPage() {
 
           {/* Section 1: Target Student Cohort */}
           <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-              <Users className="w-4 h-4 text-[#0D3481]" />
-              <h2 className="text-sm font-bold text-slate-900">1. Target Student Cohort</h2>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#0D3481]" />
+                <h2 className="text-sm font-bold text-slate-900">1. Target Student Cohort</h2>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-400">
+                Academic Session 2026-27
+              </span>
             </div>
+
+            <p className="text-xs text-slate-500">
+              Configure target course, engineering branch, academic year, and section cohort.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Course */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">Course</label>
-                <select
+                <label className="block text-xs font-semibold text-slate-700">Course</label>
+                <DynamicSelect
+                  label="Course"
                   value={course}
-                  onChange={(e) => setCourse(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                >
-                  {COURSES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setCourse}
+                  options={COURSES}
+                  icon={GraduationCap}
+                />
               </div>
 
               {/* Stream */}
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-                <label className="text-xs font-semibold text-slate-700">Stream / Branch</label>
-                <select
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-700">Stream / Branch</label>
+                <DynamicSelect
+                  label="Stream / Branch"
                   value={stream}
-                  onChange={(e) => setStream(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                >
-                  {STREAMS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setStream}
+                  options={STREAMS}
+                  icon={BookOpen}
+                />
               </div>
 
               {/* Year */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">Year</label>
-                <select
+                <label className="block text-xs font-semibold text-slate-700">Year</label>
+                <DynamicSelect
+                  label="Year"
                   value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                >
-                  {YEARS.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setYear}
+                  options={YEARS}
+                  icon={Calendar}
+                />
               </div>
 
               {/* Section: A, B, C, D, E, F */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">Section</label>
-                <select
+                <label className="block text-xs font-semibold text-slate-700">Section</label>
+                <DynamicSelect
+                  label="Section"
                   value={section}
-                  onChange={(e) => setSection(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                >
-                  {SECTIONS.map((sec) => (
-                    <option key={sec} value={sec}>
-                      Section {sec}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSection}
+                  options={SECTIONS.map((sec) => ({
+                    value: sec,
+                    label: sec === "All" ? "All Sections" : `Section ${sec}`,
+                    description: sec === "All" ? "All Sections Cohort" : `Section ${sec} Cohort`,
+                  }))}
+                  icon={Users}
+                />
               </div>
             </div>
           </div>
@@ -573,36 +641,78 @@ export default function StartProjectPage() {
 
           {/* Section 4: Timeline & Submission Windows */}
           <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-              <Calendar className="w-4 h-4 text-[#0D3481]" />
-              <h2 className="text-sm font-bold text-slate-900">4. Timeline & Deadlines</h2>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 block">Start Date</label>
-                <input
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-4 py-2.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                />
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#0D3481]" />
+                <h2 className="text-sm font-bold text-slate-900">4. Timeline & Deadlines</h2>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 block">Deadline</label>
-                <input
-                  type="date"
-                  required
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  className="w-full px-4 py-2.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] cursor-pointer"
-                />
+              {startDate && deadline && (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-[11px] font-bold text-[#0D3481]">
+                  <span>{daysBetween(startDate, deadline)} Days Window</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+              <CustomDatePicker
+                label="Start Date"
+                value={startDate}
+                onChange={handleStartDateChange}
+                minDate={getTodayIso()}
+                required
+                ruleBadge="Rule: Today or future only"
+                helperText="Submissions and team registration open on this date"
+                highlightRange={{ start: startDate, end: deadline }}
+                presets={[
+                  { label: "Today", daysFromBase: 0 },
+                  { label: "Tomorrow", daysFromBase: 1 },
+                  { label: "+7 Days", daysFromBase: 7 },
+                ]}
+              />
+
+              <CustomDatePicker
+                label="Submission Deadline"
+                value={deadline}
+                onChange={handleDeadlineChange}
+                minDate={startDate}
+                required
+                ruleBadge="Rule: On or after start date"
+                helperText="Final date for students to submit synopsis/teams"
+                highlightRange={{ start: startDate, end: deadline }}
+                presets={[
+                  { label: "+15 Days", daysFromBase: 15 },
+                  { label: "+30 Days", daysFromBase: 30 },
+                  { label: "+45 Days", daysFromBase: 45 },
+                  { label: "+60 Days", daysFromBase: 60 },
+                ]}
+              />
+            </div>
+
+            {/* Live Visual Timeline Summary */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-800">
+                    {formatDisplayDate(startDate)} &rarr; {formatDisplayDate(deadline)}
+                  </span>
+                  <p className="text-[11px] text-slate-500">
+                    Registration and submissions window enforced by institutional rubric policy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Rules Verified
+                </span>
               </div>
             </div>
 
-            <p className="text-xs text-slate-500 pt-2">
+            <p className="text-xs text-slate-500 pt-1">
               Publishing will broadcast this initiative to all enrolled students in <strong>{stream} ({year} - Section {section})</strong> to commence team registration and synopsis submissions.
             </p>
           </div>
@@ -610,7 +720,7 @@ export default function StartProjectPage() {
           {/* Form Actions Footer */}
           <div className="flex items-center justify-between pt-2">
             <Link
-              href="/"
+              href="/hod/forms"
               className="px-5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors"
             >
               Cancel

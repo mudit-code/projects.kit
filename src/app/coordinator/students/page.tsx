@@ -4,10 +4,10 @@ import StudentsTable from "@/components/dashboard/StudentsTable";
 
 export default function CoordinatorStudentsPage() {
   return (
-    <div className="w-full">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-slate-900">Assigned Students Roster</h1>
-        <p className="text-sm text-slate-500 mt-1">
+    <div className="w-full flex-1 flex flex-col min-h-0">
+      <div className="mb-2.5 shrink-0">
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Assigned Students Roster</h1>
+        <p className="text-xs text-slate-500 mt-0.5">
           Final year student records assigned to your faculty coordination cohort.
         </p>
       </div>

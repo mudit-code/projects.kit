@@ -6,6 +6,9 @@ import { getActiveSession, UserSession } from "@/lib/auth";
 import { LOGOS } from "@/lib/logos";
 import { StreamBadge } from "@/components/StreamBadge";
 import { isStudentEligibleForForm } from "@/lib/formTargeting";
+import { RequestRecordModal } from "@/components/RequestRecordModal";
+import { PageIntroAnimation } from "@/components/PageIntroAnimation";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   Search,
@@ -29,6 +32,13 @@ import {
   Sparkles,
   Loader2,
   ArrowLeft,
+  Globe,
+  FolderGit2,
+  ExternalLink,
+  Presentation,
+  Upload,
+  Paperclip,
+  UserPlus,
 } from "lucide-react";
 
 /* ─── Types ─── */
@@ -61,6 +71,10 @@ type AvailableForm = {
   startDate: string;
   deadline: string;
   status: string;
+  submission?: PublicSubmission;
+  finalSubmissionOpen?: boolean;
+  finalSubmissionDeadline?: string;
+  finalSubmissionConfig?: any;
 };
 
 type TeamMember = {
@@ -87,6 +101,15 @@ type PublicSubmission = {
   teamMembers: TeamMember[];
   submittedAt: string;
   verificationStatus: "pending" | "verified" | "rejected";
+  finalSubmission?: {
+    reportFileName?: string;
+    repoUrl?: string;
+    slidesFileName?: string;
+    demoUrl?: string;
+    remarks?: string;
+    submittedAt?: string;
+  };
+  finalSubmissionCompleted?: boolean;
 };
 
 /* ─── Constants ─── */
@@ -180,10 +203,19 @@ interface PublicLandingPageProps {
   onAdminAccess?: () => void;
 }
 
+// Module-scoped flag so the full V3 intro plays on initial page load / refresh,
+// but does not re-trigger during in-app navigation or step transitions.
+let hasPlayedLandingIntro = false;
+
 /* ═══════════════════════════════════════════════════
    PUBLIC LANDING PAGE
    ═══════════════════════════════════════════════════ */
 export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
+  // ── V3 intro animation state ─────────────────────────────────────────
+  const heroLogoRef = useRef<HTMLDivElement | null>(null);
+  const [showIntro, setShowIntro] = useState(() => !hasPlayedLandingIntro);
+  const [introRevealing, setIntroRevealing] = useState(false); // page fading in
+
   const [activeSession, setActiveSession] = useState<UserSession | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [step, setStep] = useState<Step>("landing");
@@ -195,6 +227,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const studentCacheRef = useRef<Map<string, StudentRecord>>(new Map());
 
   // Registration form state
   const [registrationType, setRegistrationType] = useState<"individual" | "group">("individual");
@@ -204,22 +237,137 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [teamLoading, setTeamLoading] = useState<Record<number, boolean>>({});
 
-  // Secret access: long-press timer ref
+  const router = useRouter();
+
+  // AFN Record Request Feature
+  const [afnNotFound, setAfnNotFound] = useState(false);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+
+  // Hidden Admin Access State
+  const [isHoldingLogo, setIsHoldingLogo] = useState(false);
+  const [sessionTimeoutNotice, setSessionTimeoutNotice] = useState(false);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didTriggerLongPress = useRef(false);
+
+  // Final Deliverables Modal State
+  const [isFinalModalOpen, setIsFinalModalOpen] = useState(false);
+  const [finalTargetForm, setFinalTargetForm] = useState<AvailableForm | null>(null);
+  const [finalTargetSubmission, setFinalTargetSubmission] = useState<PublicSubmission | null>(null);
+  const [finalRepoUrl, setFinalRepoUrl] = useState("");
+  const [finalDemoUrl, setFinalDemoUrl] = useState("");
+  const [finalReportFileName, setFinalReportFileName] = useState("");
+  const [finalSlidesFileName, setFinalSlidesFileName] = useState("");
+  const [finalRemarks, setFinalRemarks] = useState("");
+  const [isSubmittingFinal, setIsSubmittingFinal] = useState(false);
+  const [finalSuccessToast, setFinalSuccessToast] = useState<string | null>(null);
 
   // Sync active session and mark mounted on client to eliminate hydration diffs
   useEffect(() => {
     setIsMounted(true);
     setActiveSession(getActiveSession());
+    hasPlayedLandingIntro = true;
+
+    // Purge any stale synthetic test forms from localStorage
+    try {
+      const stored = localStorage.getItem("kit_published_initiatives");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (f: any) =>
+              f &&
+              !f.id?.startsWith("INIT-TEST-") &&
+              f.id !== "INIT-318809" &&
+              f.id !== "INIT-759402" &&
+              f.id !== "INIT-BCS751"
+          );
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(cleaned));
+        }
+      }
+    } catch {}
+
+    // Background pre-fetch of entire student roster for instant 0ms RAM lookups
+    fetch("/api/students")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.students)) {
+          for (const s of data.students) {
+            if (s.afn) studentCacheRef.current.set(String(s.afn).toUpperCase(), s);
+            if (s.rollNumber) studentCacheRef.current.set(String(s.rollNumber).toUpperCase(), s);
+          }
+        }
+      })
+      .catch(() => {});
+
+    // Background warm-up of published forms from API
+    fetch("/api/forms")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.forms)) {
+          const cleanForms = data.forms.filter(
+            (f: any) =>
+              f &&
+              !f.id?.startsWith("INIT-TEST-") &&
+              f.id !== "INIT-318809" &&
+              f.id !== "INIT-759402" &&
+              f.id !== "INIT-BCS751"
+          );
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(cleanForms));
+        }
+      })
+      .catch(() => {});
+
+    // Check if redirected due to session inactivity timeout
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("session_expired") === "1" || params.get("session_expired") === "true") {
+        setSessionTimeoutNotice(true);
+      }
+    }
 
     const syncSession = () => setActiveSession(getActiveSession());
+    const handleTimeout = () => setSessionTimeoutNotice(true);
+    const syncInitiatives = () => {
+      fetch("/api/forms")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.forms)) {
+            const cleanForms = data.forms.filter(
+              (f: any) =>
+                f &&
+                !f.id?.startsWith("INIT-TEST-") &&
+                f.id !== "INIT-318809" &&
+                f.id !== "INIT-759402" &&
+                f.id !== "INIT-BCS751"
+            );
+            localStorage.setItem("kit_published_initiatives", JSON.stringify(cleanForms));
+          }
+        })
+        .catch(() => {});
+    };
+
     window.addEventListener("kit-auth-change", syncSession);
+    window.addEventListener("kit-session-timeout", handleTimeout);
+    window.addEventListener("kit-initiatives-change", syncInitiatives);
     window.addEventListener("storage", syncSession);
     return () => {
       window.removeEventListener("kit-auth-change", syncSession);
+      window.removeEventListener("kit-session-timeout", handleTimeout);
+      window.removeEventListener("kit-initiatives-change", syncInitiatives);
       window.removeEventListener("storage", syncSession);
     };
   }, []);
+
+  const dismissSessionTimeoutNotice = () => {
+    setSessionTimeoutNotice(false);
+    if (typeof window !== "undefined" && window.history && window.location.search.includes("session_expired")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("session_expired");
+      const clean = url.pathname + (url.search ? url.search : "");
+      window.history.replaceState({}, "", clean);
+    }
+  };
 
   // Focus AFN input on mount
   useEffect(() => {
@@ -228,39 +376,90 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     }
   }, [step]);
 
+  // Navigate to hidden admin panel page
+  const triggerHiddenLogin = useCallback(() => {
+    didTriggerLongPress.current = true;
+    setIsHoldingLogo(false);
+
+    try {
+      if (typeof window !== "undefined" && window.navigator && "vibrate" in window.navigator) {
+        window.navigator.vibrate([40, 30, 40]);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (onAdminAccess) {
+      onAdminAccess();
+    } else {
+      router.push("/admin");
+    }
+  }, [onAdminAccess, router]);
+
   /* ─── Secret Access: Ctrl+Shift+H (desktop) ─── */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && (e.key === "H" || e.key === "h")) {
         e.preventDefault();
-        onAdminAccess?.();
+        triggerHiddenLogin();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onAdminAccess]);
+  }, [triggerHiddenLogin]);
 
-  /* ─── Secret Access: Long-press logo (mobile) ─── */
-  const handleLogoTouchStart = useCallback(() => {
+  /* ─── Secret Access: Tap & Hold logo (mobile touch & pointer) ─── */
+  const handleLogoPointerDown = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    didTriggerLongPress.current = false;
+    let clientX = 0;
+    let clientY = 0;
+    if ("touches" in e && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if ("clientX" in e) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    touchStartPos.current = { x: clientX, y: clientY };
+    setIsHoldingLogo(true);
+
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
     }
     longPressTimer.current = setTimeout(() => {
-      try {
-        if (typeof window !== "undefined" && window.navigator && "vibrate" in window.navigator) {
-          window.navigator.vibrate(50);
-        }
-      } catch {
-        // ignore
-      }
-      onAdminAccess?.();
-    }, LONG_PRESS_MS);
-  }, [onAdminAccess]);
+      triggerHiddenLogin();
+    }, 900);
+  }, [triggerHiddenLogin]);
 
-  const handleLogoTouchEnd = useCallback(() => {
+  const handleLogoTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartPos.current || e.touches.length === 0) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+    // If finger moved more than 10px in any direction, cancel long-press to allow scrolling
+    if (dx > 10 || dy > 10) {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      setIsHoldingLogo(false);
+      touchStartPos.current = null;
+    }
+  }, []);
+
+  const handleLogoPointerUp = useCallback((e?: React.SyntheticEvent) => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
+    }
+    setIsHoldingLogo(false);
+    touchStartPos.current = null;
+
+    if (didTriggerLongPress.current) {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      setTimeout(() => {
+        didTriggerLongPress.current = false;
+      }, 350);
     }
   }, []);
 
@@ -283,90 +482,240 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     }
   }, [step]);
 
+  /* ─── Load Forms For Student ─── */
+  const loadFormsForStudent = useCallback(async (data: StudentRecord) => {
+    setStudent(data);
+    const trimmedAfn = (data.afn || "").trim();
+    const trimmedRoll = (data.rollNumber || "").trim();
+
+    // Helper to evaluate and filter eligible forms
+    const evaluateEligibleForms = (rawForms: any[], subsDict: Record<string, any[]>) => {
+      const cleanForms = (rawForms || []).filter(
+        (f: any) =>
+          f &&
+          !f.id?.startsWith("INIT-TEST-") &&
+          f.id !== "INIT-318809" &&
+          f.id !== "INIT-759402" &&
+          f.id !== "INIT-BCS751"
+      );
+
+      const getSub = (formId: string, subjectCode?: string): PublicSubmission | null => {
+        const keysToCheck = [formId];
+        if (subjectCode && subjectCode !== formId) keysToCheck.push(subjectCode);
+
+        for (const key of keysToCheck) {
+          const subs = subsDict[key] || [];
+          for (const rawSub of subs) {
+            const sub = rawSub as any;
+            const sAfn = (sub.student?.afn || sub.studentAfn || "").trim().toUpperCase();
+            const sRoll = (sub.student?.rollNumber || sub.studentRollNumber || "").trim().toUpperCase();
+            if (
+              (trimmedAfn && sAfn === trimmedAfn.toUpperCase()) ||
+              (trimmedRoll && sRoll === trimmedRoll.toUpperCase()) ||
+              (trimmedAfn && sRoll === trimmedAfn.toUpperCase()) ||
+              (trimmedRoll && sAfn === trimmedRoll.toUpperCase())
+            ) {
+              return sub as PublicSubmission;
+            }
+            const members = (sub.teamMembers || []) as any[];
+            for (const tm of members) {
+              const tmAfn = (tm.afn || "").trim().toUpperCase();
+              const tmRoll = (tm.rollNumber || tm.rollNo || "").trim().toUpperCase();
+              if (
+                (trimmedAfn && tmAfn === trimmedAfn.toUpperCase()) ||
+                (trimmedRoll && tmRoll === trimmedRoll.toUpperCase()) ||
+                (trimmedAfn && tmRoll === trimmedAfn.toUpperCase()) ||
+                (trimmedRoll && tmAfn === trimmedRoll.toUpperCase())
+              ) {
+                return sub as PublicSubmission;
+              }
+            }
+          }
+        }
+        return null;
+      };
+
+      const eligibleForms: AvailableForm[] = [];
+      cleanForms.forEach((init: any) => {
+        if (isStudentEligibleForForm(data, init)) {
+          const sub = getSub(init.id, init.subjectCode);
+
+          let finalSubCfg: any = init.finalSubmission || null;
+          if (typeof window !== "undefined") {
+            try {
+              const rawCfg = localStorage.getItem(`kit_final_submission_${init.id}`);
+              if (rawCfg) finalSubCfg = JSON.parse(rawCfg);
+            } catch {}
+          }
+          const isFinalOpen = Boolean(
+            init.finalSubmissionOpen || init.finalSubmission?.enabled || finalSubCfg?.enabled
+          );
+
+          eligibleForms.push({
+            id: init.id,
+            title: init.title || (init.customProjectName
+              ? `${init.customProjectName} Registration Form`
+              : `${init.projectType || "Project"} Registration Form`),
+            description: init.description || "",
+            dispatchedBy: init.publishedBy || (init.coordinator?.name ? `${init.coordinator.name} (${init.coordinator.role || "Coordinator"})` : "Rahul Singh (HOD)"),
+            roleBadge: init.assignedTo === "faculty" || init.coordinator?.role === "Faculty" ? "Faculty" : "HOD",
+            subjectCode: init.subjectCode || "BCS751",
+            category: init.category || "Academic",
+            course: init.course || data.course,
+            stream: init.stream || data.stream,
+            year: init.year || data.year,
+            section: init.section || data.section || "A",
+            startDate: init.startDate || "2026-10-16",
+            deadline: init.deadline || "2026-11-30",
+            status: sub ? "Submitted" : "Open",
+            submission: sub || undefined,
+            finalSubmissionOpen: isFinalOpen,
+            finalSubmissionDeadline: finalSubCfg?.deadline || init.finalSubmissionDeadline || "2026-11-15",
+            finalSubmissionConfig: finalSubCfg,
+          });
+        }
+      });
+
+      eligibleForms.sort((a, b) => {
+        if (a.status === "Open" && b.status !== "Open") return -1;
+        if (a.status !== "Open" && b.status === "Open") return 1;
+        return 0;
+      });
+
+      return eligibleForms;
+    };
+
+    // Stale-While-Revalidate: load immediately from local cache (0ms instant transition)
+    let cachedForms: any[] = [];
+    try {
+      const stored = localStorage.getItem("kit_published_initiatives");
+      if (stored) cachedForms = JSON.parse(stored);
+    } catch {}
+
+    const localSubs = loadSubmissions();
+    const instantForms = evaluateEligibleForms(cachedForms, localSubs);
+
+    // Switch step immediately so student never experiences waiting spinner
+    setForms(instantForms);
+    setLoading(false);
+    setStep("forms");
+
+    // Fetch fresh forms and submissions concurrently in background
+    try {
+      const [formsRes, subsRes] = await Promise.all([
+        fetch("/api/forms").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/submissions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+
+      let freshForms = cachedForms;
+      if (formsRes?.success && Array.isArray(formsRes.forms)) {
+        freshForms = formsRes.forms;
+        try {
+          localStorage.setItem("kit_published_initiatives", JSON.stringify(freshForms));
+        } catch {}
+      }
+
+      let freshSubs = localSubs;
+      if (subsRes?.success && subsRes.submissions) {
+        freshSubs = { ...localSubs, ...subsRes.submissions };
+        try {
+          saveSubmissions(freshSubs);
+        } catch {}
+      }
+
+      const freshEligible = evaluateEligibleForms(freshForms, freshSubs);
+      setForms(freshEligible);
+    } catch {
+      // background update silently catches
+    }
+  }, []);
+
   /* ─── Fetch Student ─── */
   const handleAfnSubmit = useCallback(
     async (e?: React.FormEvent) => {
       e?.preventDefault();
       const trimmed = afn.trim();
-      if (!trimmed) {
-        setError("Please enter your AFN.");
+      const upper = trimmed.toUpperCase();
+
+      // Must be exactly 6 digits — no fetch otherwise
+      if (!/^\d{6}$/.test(trimmed)) {
+        setError("Invalid AFN — please enter your 6-digit Academic File Number.");
+        return;
+      }
+
+      setError("");
+
+      // Instant cache hit check (0ms)
+      if (studentCacheRef.current.has(upper)) {
+        const cached = studentCacheRef.current.get(upper)!;
+        setAfnNotFound(false);
+        loadFormsForStudent(cached);
         return;
       }
 
       setLoading(true);
-      setError("");
 
       try {
-        const res = await fetch(`/api/students/${trimmed}`);
-        if (!res.ok) {
-          setError("No student found with this AFN. Please check and try again.");
+        let data: StudentRecord | null = null;
+        const res = await fetch(`/api/students/${encodeURIComponent(trimmed)}`);
+        if (res.ok) {
+          data = await res.json();
+          if (data) {
+            studentCacheRef.current.set(upper, data);
+            if (data.afn) studentCacheRef.current.set(data.afn.toUpperCase(), data);
+            if (data.rollNumber) studentCacheRef.current.set(data.rollNumber.toUpperCase(), data);
+          }
+        } else {
+          // Check local custom students (e.g. from requested additions)
+          try {
+            const customList: StudentRecord[] = JSON.parse(
+              localStorage.getItem("kit_custom_students") || "[]"
+            );
+            data = customList.find(
+              (s) =>
+                s.afn.toUpperCase() === upper ||
+                (s.rollNumber && s.rollNumber.toUpperCase() === upper)
+            ) || null;
+            if (data) {
+              studentCacheRef.current.set(upper, data);
+            }
+          } catch {}
+        }
+
+        if (!data) {
+          setError("No student found with this AFN or Roll Number. Please check or request registration below.");
+          setAfnNotFound(true);
           setLoading(false);
           return;
         }
 
-        const data: StudentRecord = await res.json();
-        setStudent(data);
-
-        // Check if already submitted
-        const existing = findSubmissionByAfn(trimmed);
-        if (existing) {
-          setExistingSubmission(existing);
-          setStep("status");
-          setLoading(false);
-          return;
-        }
-
-        // Load published initiatives from localStorage (the single source of truth shared with dashboard)
-        let publishedInitiatives: any[] = [];
-        try {
-          const stored = localStorage.getItem("kit_published_initiatives");
-          if (stored) {
-            publishedInitiatives = JSON.parse(stored);
-          }
-        } catch {
-          publishedInitiatives = [];
-        }
-
-        let allForms: AvailableForm[] = [];
-
-        publishedInitiatives.forEach((init: any) => {
-          if (isStudentEligibleForForm(data, init)) {
-            allForms.push({
-              id: init.id,
-              title: init.customProjectName
-                ? `${init.customProjectName} Registration Form`
-                : `${init.projectType || "Project"} Registration Form`,
-              description: init.description || "",
-              dispatchedBy: init.publishedBy || (init.coordinator?.name ? `${init.coordinator.name} (${init.coordinator.role || "Coordinator"})` : "Rahul Singh (HOD)"),
-              roleBadge: init.assignedTo === "faculty" || init.coordinator?.role === "Faculty" ? "Faculty" : "HOD",
-              subjectCode: init.subjectCode || "BCS751",
-              category: init.category || "Academic",
-              course: init.course || data.course,
-              stream: init.stream || data.stream,
-              year: init.year || data.year,
-              section: init.section || data.section || "A",
-              startDate: init.startDate || "2026-10-16",
-              deadline: init.deadline || "2026-11-30",
-              status: "Open",
-            });
-          }
-        });
-
-        // Filter out forms student has already submitted to
-        const submissions = loadSubmissions();
-        allForms = allForms.filter(
-          (f) => !submissions[f.id]?.some((s) => s.student.afn === trimmed)
-        );
-
-        setForms(allForms);
-        setStep("forms");
+        setAfnNotFound(false);
+        await loadFormsForStudent(data);
       } catch {
-        setError("Something went wrong. Please try again.");
+        setError("Something went wrong while loading forms. Please try again.");
+        setLoading(false);
       }
-
-      setLoading(false);
     },
-    [afn]
+    [afn, loadFormsForStudent]
+  );
+
+  /* ─── Fast input change with prefetch ─── */
+  const handleAfnChange = useCallback((val: string) => {
+    // Strip non-digits and cap at 6
+    const digits = val.replace(/\D/g, "").slice(0, 6);
+    setAfn(digits);
+    if (error) setError("");
+    if (afnNotFound) setAfnNotFound(false);
+  }, [error, afnNotFound]);
+
+  const handleRecordRequestSubmitted = useCallback(
+    async (newStudent: StudentRecord) => {
+      setAfn(newStudent.afn);
+      setAfnNotFound(false);
+      setError("");
+      await loadFormsForStudent(newStudent);
+    },
+    [loadFormsForStudent]
   );
 
   /* ─── Open Registration Form ─── */
@@ -392,11 +741,26 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   /* ─── Fetch team member name by AFN ─── */
   const fetchTeamMemberName = async (idx: number, memberAfn: string) => {
     if (!memberAfn.trim()) return;
+    const clean = memberAfn.trim().toUpperCase();
+
+    if (studentCacheRef.current.has(clean)) {
+      const data = studentCacheRef.current.get(clean)!;
+      setTeamMembers((prev) => {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], name: data.name };
+        return updated;
+      });
+      return;
+    }
+
     setTeamLoading((prev) => ({ ...prev, [idx]: true }));
     try {
-      const res = await fetch(`/api/students/${memberAfn.trim()}`);
+      const res = await fetch(`/api/students/${encodeURIComponent(clean)}`);
       if (res.ok) {
         const data: StudentRecord = await res.json();
+        studentCacheRef.current.set(clean, data);
+        if (data.afn) studentCacheRef.current.set(data.afn.toUpperCase(), data);
+        if (data.rollNumber) studentCacheRef.current.set(data.rollNumber.toUpperCase(), data);
         setTeamMembers((prev) => {
           const updated = [...prev];
           updated[idx] = { ...updated[idx], name: data.name };
@@ -419,6 +783,22 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       updated[idx] = { ...updated[idx], [field]: value };
       return updated;
     });
+
+    if (field === "afn") {
+      const clean = value.trim().toUpperCase();
+      if (clean.length >= 6) {
+        if (studentCacheRef.current.has(clean)) {
+          const data = studentCacheRef.current.get(clean)!;
+          setTeamMembers((prev) => {
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], name: data.name };
+            return updated;
+          });
+        } else {
+          fetchTeamMemberName(idx, value);
+        }
+      }
+    }
   };
 
   /* ─── Submit Registration ─── */
@@ -495,6 +875,24 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       }),
     }).catch(() => {});
 
+    fetch(`/api/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formId: selectedForm.id,
+        submission,
+      }),
+    }).catch(() => {});
+
+    // Update forms state locally so this form is immediately marked submitted
+    setForms((prev) =>
+      prev.map((f) =>
+        f.id === selectedForm.id
+          ? { ...f, status: "Submitted", submission }
+          : f
+      )
+    );
+
     setExistingSubmission(submission);
     setStep("success");
   };
@@ -515,30 +913,176 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     setRegistrationType("individual");
   };
 
+  /* ─── Final Deliverables Submission Handlers ─── */
+  const handleOpenFinalDeliverablesModal = (form: AvailableForm, sub?: PublicSubmission) => {
+    setFinalTargetForm(form);
+    const existing = sub || form.submission || existingSubmission || null;
+    setFinalTargetSubmission(existing);
+    if (existing?.finalSubmission) {
+      setFinalRepoUrl(existing.finalSubmission.repoUrl || "");
+      setFinalDemoUrl(existing.finalSubmission.demoUrl || "");
+      setFinalReportFileName(existing.finalSubmission.reportFileName || "");
+      setFinalSlidesFileName(existing.finalSubmission.slidesFileName || "");
+      setFinalRemarks(existing.finalSubmission.remarks || "");
+    } else {
+      setFinalRepoUrl("");
+      setFinalDemoUrl("");
+      setFinalReportFileName("");
+      setFinalSlidesFileName("");
+      setFinalRemarks("");
+    }
+    setIsFinalModalOpen(true);
+  };
+
+  const handleSubmitFinalDeliverables = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!finalTargetForm) return;
+
+    setIsSubmittingFinal(true);
+    try {
+      const finalPayload = {
+        repoUrl: finalRepoUrl.trim(),
+        demoUrl: finalDemoUrl.trim(),
+        reportFileName: finalReportFileName.trim() || `${student?.rollNumber || student?.afn || "Project"}_Report_Dossier.pdf`,
+        slidesFileName: finalSlidesFileName.trim() || `${student?.rollNumber || student?.afn || "Project"}_Presentation_Slides.pptx`,
+        remarks: finalRemarks.trim(),
+        submittedAt: new Date().toISOString(),
+      };
+
+      // 1. Update kit_public_submissions in localStorage
+      const allSubs = loadSubmissions();
+      const formKey = finalTargetForm.id;
+      if (!allSubs[formKey]) allSubs[formKey] = [];
+
+      const targetAfn = (student?.afn || "").trim().toUpperCase();
+      const targetRoll = (student?.rollNumber || "").trim().toUpperCase();
+
+      let updatedSub: PublicSubmission | null = null;
+
+      for (let i = 0; i < allSubs[formKey].length; i++) {
+        const item = allSubs[formKey][i];
+        const sAfn = (item.student?.afn || "").trim().toUpperCase();
+        const sRoll = (item.student?.rollNumber || "").trim().toUpperCase();
+        const isMember =
+          Array.isArray(item.teamMembers) &&
+          item.teamMembers.some((m) => (m.afn || "").trim().toUpperCase() === targetAfn);
+
+        if (sAfn === targetAfn || sRoll === targetRoll || isMember) {
+          allSubs[formKey][i] = {
+            ...item,
+            finalSubmission: finalPayload,
+            finalSubmissionCompleted: true,
+          };
+          updatedSub = allSubs[formKey][i];
+          break;
+        }
+      }
+
+      if (!updatedSub && finalTargetSubmission) {
+        updatedSub = {
+          ...finalTargetSubmission,
+          finalSubmission: finalPayload,
+          finalSubmissionCompleted: true,
+        };
+        allSubs[formKey].push(updatedSub);
+      }
+
+      saveSubmissions(allSubs);
+
+      // 2. Also sync to /api/submissions
+      try {
+        await fetch("/api/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            formId: finalTargetForm.id,
+            submission: updatedSub,
+          }),
+        });
+      } catch (err) {
+        console.warn("Could not sync final submission to server:", err);
+      }
+
+      // 3. Update state
+      if (updatedSub) {
+        setExistingSubmission(updatedSub);
+      }
+      setForms((prev) =>
+        prev.map((f) => {
+          if (f.id === finalTargetForm.id) {
+            return {
+              ...f,
+              submission: updatedSub || f.submission,
+            };
+          }
+          return f;
+        })
+      );
+
+      setIsFinalModalOpen(false);
+      setFinalSuccessToast("Final deliverables submitted successfully! Project is now ready for evaluation.");
+      setTimeout(() => setFinalSuccessToast(null), 5000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmittingFinal(false);
+    }
+  };
+
   /* ═══════════════════════════════════════════════════
      RENDER
      ═══════════════════════════════════════════════════ */
   return (
-    <div className={`bg-[#F6F5F2] flex flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"}`}>
-      {/* ─── Header ─── */}
-      <header className="relative w-full px-5 sm:px-8 py-3.5 flex items-center justify-between border-b border-slate-200/60 bg-white/70 backdrop-blur-md sticky top-0 z-30">
-        {/* Leftmost: Institution Logo */}
+    <>
+      {/* ── V3: First-visit intro animation ─────────────────────────── */}
+      {showIntro && (
+        <PageIntroAnimation
+          heroLogoRef={heroLogoRef}
+          onStartReveal={() => setIntroRevealing(true)}
+          onComplete={() => setShowIntro(false)}
+        />
+      )}
+
+      {/* ── Page content — fades in as intro overlay dissolves ──────── */}
+      <div
+        className={`bg-[#F6F5F2] flex flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"} w-full max-w-full overflow-x-hidden`}
+        style={{
+          opacity:    showIntro && !introRevealing ? 0 : 1,
+          transition: introRevealing ? 'opacity 0.55s ease' : 'none',
+        }}
+      >
+      {/* ─── Fixed Non-Scrolling Header ─── */}
+      <header className="fixed top-0 left-0 right-0 h-16 w-full px-4 sm:px-8 flex items-center justify-between border-b border-slate-200/60 bg-white/80 backdrop-blur-md z-40 shadow-2xs">
+        {/* Leftmost: Institution Logo with Secret Mobile Long-Press */}
         <div className="flex items-center">
           <button
-            onClick={handleReset}
-            onTouchStart={handleLogoTouchStart}
-            onTouchEnd={handleLogoTouchEnd}
-            onTouchCancel={handleLogoTouchEnd}
-            onMouseDown={handleLogoTouchStart}
-            onMouseUp={handleLogoTouchEnd}
-            onMouseLeave={handleLogoTouchEnd}
-            className="flex items-center group cursor-pointer select-none"
+            onClick={(e) => {
+              if (didTriggerLongPress.current) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+              handleReset();
+            }}
+            onTouchStart={handleLogoPointerDown}
+            onTouchMove={handleLogoTouchMove}
+            onTouchEnd={handleLogoPointerUp}
+            onTouchCancel={handleLogoPointerUp}
+            onMouseDown={handleLogoPointerDown}
+            onMouseUp={handleLogoPointerUp}
+            onMouseLeave={handleLogoPointerUp}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+            className={`flex items-center group cursor-pointer select-none transition-all duration-200 ${
+              isHoldingLogo ? "scale-95 ring-4 ring-[#0D3481]/30 rounded-xl" : ""
+            }`}
             aria-label="Kanpur Institute of Technology"
+            title="Kanpur Institute of Technology"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={LOGOS.kit}
-              alt="KIT Logo"
+              alt="Kanpur Institute of Technology"
               className="h-8 sm:h-9 w-auto max-w-[140px] sm:max-w-[170px] object-contain group-hover:scale-105 transition-transform"
               draggable={false}
             />
@@ -557,8 +1101,40 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
         </div>
       </header>
 
+      {/* Header spacer to prevent content from slipping under fixed header */}
+      <div className="h-16 shrink-0 w-full" aria-hidden="true" />
+
+      {/* ─── Session Inactivity Timeout Banner ─── */}
+      {sessionTimeoutNotice && (
+        <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-3 text-amber-900 flex items-center justify-between gap-3 text-xs sm:text-sm animate-in fade-in slide-in-from-top-2 duration-200 z-20">
+          <div className="flex items-center gap-2.5 max-w-2xl mx-auto">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Session Expired:</strong> You were automatically signed out after 20 minutes of inactivity.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => router.push("/admin")}
+              className="px-3 py-1 bg-[#0D3481] hover:bg-[#0A2761] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            >
+              Sign In Again
+            </button>
+            <button
+              type="button"
+              onClick={dismissSessionTimeoutNotice}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+              aria-label="Dismiss notice"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── Main Content ─── */}
-      <main className={`flex-1 flex items-center justify-center px-4 ${step === "register" ? "py-2 sm:py-3 overflow-hidden min-h-0" : "py-8 sm:py-12"}`}>
+      <main className={`flex-1 flex items-center justify-center px-4 w-full max-w-full ${step === "register" ? "py-2 sm:py-3 overflow-hidden min-h-0" : "py-6 sm:py-12"}`}>
         <AnimatePresence mode="wait">
           {/* ═══ STEP 1: Landing — AFN Entry ═══ */}
           {step === "landing" && (
@@ -568,36 +1144,77 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="max-w-lg w-full"
+              className="w-full max-w-xl mx-auto flex flex-col items-center"
             >
-              <div className="text-center mb-8">
-                {/* KIT Logo instead of badge */}
+              <div className="text-center mb-6 sm:mb-8 w-full">
+                {/* Hero logo — suppressed motion during intro (appears via flying logo) */}
                 <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
+                  initial={showIntro ? false : { scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.1, duration: 0.4 }}
-                  className="flex justify-center mb-5"
+                  className="flex justify-center mb-4 sm:mb-5"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={LOGOS.kit}
-                    alt="Kanpur Institute of Technology"
-                    className="h-14 sm:h-16 w-auto object-contain cursor-pointer select-none active:scale-95 transition-transform"
-                    draggable={false}
-                    onTouchStart={handleLogoTouchStart}
-                    onTouchEnd={handleLogoTouchEnd}
-                    onTouchCancel={handleLogoTouchEnd}
-                    onMouseDown={handleLogoTouchStart}
-                    onMouseUp={handleLogoTouchEnd}
-                    onMouseLeave={handleLogoTouchEnd}
-                  />
+                  <div
+                    ref={heroLogoRef}
+                    className={`relative inline-flex items-center justify-center p-2 rounded-2xl transition-all duration-200 ${
+                      isHoldingLogo
+                        ? "scale-95 ring-4 ring-[#0D3481]/30 bg-blue-50/50 shadow-md animate-pulse"
+                        : "hover:scale-105"
+                    }`}
+                    onTouchStart={handleLogoPointerDown}
+                    onTouchMove={handleLogoTouchMove}
+                    onTouchEnd={handleLogoPointerUp}
+                    onTouchCancel={handleLogoPointerUp}
+                    onMouseDown={handleLogoPointerDown}
+                    onMouseUp={handleLogoPointerUp}
+                    onMouseLeave={handleLogoPointerUp}
+                    onContextMenu={(e) => e.preventDefault()}
+                    style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="KIT Logo (Tap and hold on mobile for staff access)"
+                    title="Kanpur Institute of Technology"
+                  >
+                    {/* projects.kit SVG logo — exact from animation, sized for hero */}
+                    <svg
+                      viewBox="0 0 1930 1930"
+                      role="img"
+                      aria-label="projects.kit logo"
+                      className="h-14 sm:h-20 w-auto object-contain cursor-pointer select-none transition-transform"
+                      style={{ WebkitTouchCallout: "none", pointerEvents: "none", userSelect: "none" }}
+                    >
+                      <defs>
+                        <mask id="cut-hero" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+                          <rect width="1930" height="1930" fill="#fff" />
+                          <g fill="none" stroke="#000" strokeWidth="105">
+                            <line x1="928" y1="585" x2="770" y2="1135" />
+                            <line x1="928" y1="585" x2="1345" y2="1005" />
+                            <line x1="770" y1="1135" x2="1345" y2="1005" />
+                            <line x1="770" y1="1135" x2="587" y2="1732" />
+                          </g>
+                          <g fill="#000">
+                            <circle cx="928" cy="585" r="165" />
+                            <circle cx="1345" cy="1005" r="165" />
+                            <circle cx="770" cy="1135" r="165" />
+                          </g>
+                        </mask>
+                      </defs>
+                      <polygon
+                        points="965,413.5 1516.5,965 965,1516.5 413.5,965"
+                        fill="#1C3A7F"
+                        stroke="#1C3A7F"
+                        strokeWidth="600"
+                        strokeLinejoin="round"
+                        mask="url(#cut-hero)"
+                      />
+                    </svg>
+                  </div>
                 </motion.div>
 
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-[#10334A] tracking-tight leading-tight">
-                  Welcome to{" "}
-                  <span className="text-[#0D3481]">projects.kit</span>
+                <h1 className="text-[clamp(1.15rem,4.6vw,2.25rem)] font-extrabold text-[#10334A] tracking-tight leading-tight whitespace-nowrap text-center max-w-full">
+                  Submit and track your <span className="text-[#0D3481]">projects</span>
                 </h1>
-                <p className="text-sm text-slate-500 mt-3 max-w-sm mx-auto leading-relaxed">
+                <p className="text-xs sm:text-sm text-slate-500 mt-2 sm:mt-3 max-w-sm mx-auto leading-relaxed px-2">
                   Enter your AFN to check available project registrations and
                   submit your project details.
                 </p>
@@ -606,7 +1223,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
               {/* AFN Input Card */}
               <form
                 onSubmit={handleAfnSubmit}
-                className="bg-white rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-200/90"
+                className="w-full max-w-md sm:max-w-lg mx-auto bg-white rounded-2xl p-5 sm:p-8 shadow-xl shadow-slate-200/60 border border-slate-200/90"
               >
                 <label className="block text-xs font-bold text-[#10334A] mb-2">
                   Academic File Number (AFN)
@@ -616,19 +1233,26 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                   <input
                     ref={inputRef}
                     type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={afn}
-                    onChange={(e) => {
-                      setAfn(e.target.value);
-                      setError("");
-                    }}
+                    onChange={(e) => handleAfnChange(e.target.value)}
                     placeholder="e.g. 232451"
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] bg-slate-50/50 transition-all text-slate-800 placeholder:text-slate-400"
-                    maxLength={10}
+                    maxLength={6}
                     autoComplete="off"
                   />
                 </div>
+                {/* Live digit hint */}
+                {afn.length > 0 && afn.length < 6 && (
+                  <p className="mt-1.5 text-[11px] font-semibold text-amber-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    AFN must be exactly 6 digits ({6 - afn.length} more needed)
+                  </p>
+                )}
 
-                {error && (
+                {/* Generic errors (wrong format, network issues) */}
+                {error && !afnNotFound && (
                   <motion.div
                     initial={{ opacity: 0, y: -5 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -641,7 +1265,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || afn.length !== 6}
                   className="w-full mt-5 py-3 px-4 bg-[#0D3481] hover:bg-[#0A2761] text-white rounded-xl text-sm font-bold shadow-lg shadow-[#0D3481]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
                 >
                   {loading ? (
@@ -656,6 +1280,28 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                     </>
                   )}
                 </button>
+
+                {/* AFN not found — shown after a failed fetch */}
+                {afnNotFound && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"
+                  >
+                    <p className="text-xs sm:text-sm font-semibold text-amber-800 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+                      AFN <strong>{afn}</strong> not found — double-check your number or request to be added to the registry below.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsRequestModalOpen(true)}
+                      className="mt-3 w-full py-2 px-4 bg-[#0D3481] hover:bg-[#0A2761] text-white rounded-xl text-xs sm:text-sm font-bold shadow shadow-[#0D3481]/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Request to Add My Record
+                    </button>
+                  </motion.div>
+                )}
               </form>
 
               <p className="text-center text-[11px] text-slate-400 mt-5">
@@ -745,12 +1391,16 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                   {forms.map((form) => {
                     const remaining = daysUntil(form.deadline);
                     const isUrgent = remaining <= 7;
+                    const isRegistered = form.status === "Submitted" || Boolean(form.submission);
+                    const isProjectSubmitted = Boolean(form.submission?.finalSubmissionCompleted);
 
                     return (
                       <motion.div
                         key={form.id}
                         variants={fadeUp}
-                        className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow"
+                        className={`bg-white rounded-2xl p-6 border shadow-sm hover:shadow-md transition-shadow ${
+                          isRegistered ? "border-emerald-200" : "border-slate-200"
+                        }`}
                       >
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg bg-[#0D3481]/10 text-[#0D3481]">
@@ -759,29 +1409,52 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-600">
                             {form.category}
                           </span>
-                          <span
-                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
-                              isUrgent
-                                ? "bg-red-50 text-red-700 border-red-200"
-                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            }`}
-                          >
-                            {isUrgent ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={LOGOS.hourglass}
-                                  alt="Urgent deadline"
-                                  className="w-3.5 h-3.5 object-contain shrink-0"
-                                />
-                                <span>
-                                  {remaining} day{remaining !== 1 ? "s" : ""} left
-                                </span>
-                              </>
-                            ) : (
-                              <span>{remaining} days remaining</span>
-                            )}
-                          </span>
+                          {form.finalSubmissionOpen && (
+                            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-900 border-emerald-300 shadow-2xs">
+                              <span>Final Deliverables Open</span>
+                            </span>
+                          )}
+                          {isProjectSubmitted ? (
+                            <>
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Registered</span>
+                              </span>
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-teal-50 text-teal-700 border-teal-200">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
+                                <span>Submitted</span>
+                              </span>
+                            </>
+                          ) : isRegistered ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Registered</span>
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
+                                isUrgent
+                                  ? "bg-red-50 text-red-700 border-red-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              }`}
+                            >
+                              {isUrgent ? (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={LOGOS.hourglass}
+                                    alt="Urgent deadline"
+                                    className="w-3.5 h-3.5 object-contain shrink-0"
+                                  />
+                                  <span>
+                                    {remaining} day{remaining !== 1 ? "s" : ""} left
+                                  </span>
+                                </>
+                              ) : (
+                                <span>{remaining} days remaining</span>
+                              )}
+                            </span>
+                          )}
                         </div>
 
                         <h3 className={`text-base font-bold text-slate-900 leading-snug ${form.description ? "mb-1.5" : "mb-4"}`}>
@@ -812,6 +1485,17 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                               </strong>
                             </span>
                           </div>
+                          {form.finalSubmissionOpen && (
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>
+                                Final Deadline:{" "}
+                                <strong className="text-emerald-800 font-mono">
+                                  {formatDate(form.finalSubmissionDeadline || "2026-11-15")}
+                                </strong>
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1.5">
                             <ShieldCheck className="w-3.5 h-3.5 text-[#0D3481]" />
                             <span>
@@ -820,14 +1504,58 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => handleSelectForm(form)}
-                          className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0D3481] hover:bg-[#0A2761] text-white shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Register My Project Details</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        {isRegistered ? (
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            {form.finalSubmissionOpen && (
+                              <button
+                                onClick={() => handleOpenFinalDeliverablesModal(form, form.submission)}
+                                className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs ${
+                                  form.submission?.finalSubmissionCompleted
+                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    : "bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-md hover:shadow-lg"
+                                }`}
+                              >
+                                <Send className="w-3.5 h-3.5 text-white" />
+                                <span>
+                                  {form.submission?.finalSubmissionCompleted
+                                    ? "Final Deliverables Submitted (View/Edit)"
+                                    : "Submit Final Deliverables"}
+                                </span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setSelectedForm(form);
+                                setExistingSubmission(form.submission || null);
+                                setStep("status");
+                              }}
+                              className="px-4 py-2.5 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>View Registration Details</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <button
+                              onClick={() => handleSelectForm(form)}
+                              className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0D3481] hover:bg-[#0A2761] text-white shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Register My Project Details</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                            {form.finalSubmissionOpen && (
+                              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Final submissions open alongside registration</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </motion.div>
                     );
                   })}
@@ -1275,12 +2003,27 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                   </div>
                 </div>
 
-                <button
-                  onClick={handleReset}
-                  className="mt-6 px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0D3481] hover:bg-[#0A2761] text-white shadow-md transition-all cursor-pointer"
-                >
-                  Done
-                </button>
+                <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                  <button
+                    onClick={() => {
+                      if (student) {
+                        loadFormsForStudent(student);
+                      } else {
+                        setStep("forms");
+                      }
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 text-xs font-bold rounded-xl bg-[#0D3481] hover:bg-[#0A2761] text-white shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>View All Available Forms</span>
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="w-full sm:w-auto px-5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-all cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -1420,6 +2163,132 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                     </div>
                   </div>
 
+                  {/* Final Deliverables Section if open or submitted */}
+                  {(selectedForm?.finalSubmissionOpen || existingSubmission.finalSubmissionCompleted || existingSubmission.finalSubmission) && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                          Final Project Deliverables
+                        </h3>
+                        {existingSubmission.finalSubmissionCompleted ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Submitted
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                            Phase Open
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="p-4 bg-emerald-50/50 border border-emerald-200/80 rounded-xl space-y-3 text-xs">
+                        {existingSubmission.finalSubmission ? (
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {existingSubmission.finalSubmission.repoUrl && (
+                                <a
+                                  href={existingSubmission.finalSubmission.repoUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-3 bg-white border border-emerald-200 rounded-lg hover:border-emerald-400 text-slate-800 flex items-center justify-between group transition-colors"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FolderGit2 className="w-4 h-4 text-slate-700 shrink-0" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] text-slate-400 block font-semibold">Git Repository</span>
+                                      <span className="text-xs font-mono font-bold truncate block group-hover:text-[#0D3481]">
+                                        {existingSubmission.finalSubmission.repoUrl.replace(/^https?:\/\//, "")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0D3481] shrink-0" />
+                                </a>
+                              )}
+
+                              {existingSubmission.finalSubmission.demoUrl && (
+                                <a
+                                  href={existingSubmission.finalSubmission.demoUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-3 bg-white border border-emerald-200 rounded-lg hover:border-emerald-400 text-slate-800 flex items-center justify-between group transition-colors"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Globe className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] text-slate-400 block font-semibold">Prototype / Live Demo</span>
+                                      <span className="text-xs font-mono font-bold truncate block group-hover:text-[#0D3481]">
+                                        {existingSubmission.finalSubmission.demoUrl.replace(/^https?:\/\//, "")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0D3481] shrink-0" />
+                                </a>
+                              )}
+
+                              {existingSubmission.finalSubmission.reportFileName && (
+                                <div className="p-3 bg-white border border-emerald-200 rounded-lg text-slate-800 flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-red-500 shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Report Dossier</span>
+                                    <span className="text-xs font-bold truncate block">
+                                      {existingSubmission.finalSubmission.reportFileName}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {existingSubmission.finalSubmission.slidesFileName && (
+                                <div className="p-3 bg-white border border-emerald-200 rounded-lg text-slate-800 flex items-center gap-2">
+                                  <Presentation className="w-4 h-4 text-amber-500 shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Presentation Slides</span>
+                                    <span className="text-xs font-bold truncate block">
+                                      {existingSubmission.finalSubmission.slidesFileName}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {existingSubmission.finalSubmission.remarks && (
+                              <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-emerald-100">
+                                <strong className="text-slate-800">Your Remarks:</strong> {existingSubmission.finalSubmission.remarks}
+                              </p>
+                            )}
+
+                            <div className="pt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenFinalDeliverablesModal(selectedForm || forms[0], existingSubmission)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 transition-colors cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                <span>Update Submitted Deliverables</span>
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {selectedForm?.finalSubmissionConfig?.instructions ||
+                                "Final submission phase has been opened by your coordinator. You can now submit your report dossier, Git repository link, and presentation slides."}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFinalDeliverablesModal(selectedForm || forms[0], existingSubmission)}
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <Send className="w-4 h-4" />
+                              <span>Submit Final Deliverables Now</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Team Details (if group) */}
                   {existingSubmission.registrationType === "group" &&
                     existingSubmission.teamMembers.length > 0 && (
@@ -1474,16 +2343,25 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex items-center justify-between">
+                <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <p className="text-[10px] text-slate-400">
                     Verified by the concerned project coordinator
                   </p>
-                  <button
-                    onClick={handleReset}
-                    className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-white text-slate-600 transition-colors cursor-pointer"
-                  >
-                    Go Back
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setStep("forms")}
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-[#0D3481] hover:bg-[#0A2761] text-white shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Forms</span>
+                    </button>
+                    <button
+                      onClick={handleReset}
+                      className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-white text-slate-600 transition-colors cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1498,7 +2376,250 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
           Lifecycle Suite
         </footer>
       )}
+
+      {/* ─── Final Deliverables Submission Modal ─── */}
+      {isFinalModalOpen && finalTargetForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsFinalModalOpen(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="relative w-full max-w-xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Send className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-[#10334A]">
+                      Submit Final Deliverables
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-[#0D3481] border border-slate-200">
+                      {finalTargetForm.subjectCode}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {finalTargetForm.title} · Final Deadline: <strong className="text-red-700 font-mono">{formatDate(finalTargetForm.finalSubmissionDeadline || "2026-11-15")}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsFinalModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSubmitFinalDeliverables} className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs">
+              {/* Instructions banner */}
+              <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-xl space-y-1">
+                <span className="text-[10px] font-extrabold uppercase text-[#0D3481] tracking-wider block">
+                  Coordinator Instructions
+                </span>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  {finalTargetForm.finalSubmissionConfig?.instructions ||
+                    "Please upload your complete project report (PDF), presentation slides, and provide the link to your Git repository with clear README documentation."}
+                </p>
+              </div>
+
+              {/* 1. Git Source Repository URL */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <FolderGit2 className="w-3.5 h-3.5 text-slate-700" />
+                    <span>Git Source Repository URL</span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Required
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://github.com/username/project-repo"
+                  value={finalRepoUrl}
+                  onChange={(e) => setFinalRepoUrl(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  Provide public repository URL with clear README and setup documentation.
+                </span>
+              </div>
+
+              {/* 2. Project Dossier / Report PDF */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-red-500" />
+                    <span>Project Report Dossier (PDF)</span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Required
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. BCS751_Final_Project_Report.pdf"
+                    value={finalReportFileName}
+                    onChange={(e) => setFinalReportFileName(e.target.value)}
+                    className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                  />
+                  <label className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs cursor-pointer shrink-0 flex items-center gap-1.5 transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Browse</span>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setFinalReportFileName(file.name);
+                      }}
+                    />
+                  </label>
+                </div>
+                <span className="text-[10px] text-slate-400 block">
+                  Max file size: {finalTargetForm.finalSubmissionConfig?.maxFileSizeMb || 25} MB (IEEE standard format)
+                </span>
+              </div>
+
+              {/* 3. Presentation Slides (PPT/PDF) */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Presentation className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Presentation Slides (PPT / PDF)</span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400">Optional</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. BCS751_Evaluation_Deck.pptx"
+                    value={finalSlidesFileName}
+                    onChange={(e) => setFinalSlidesFileName(e.target.value)}
+                    className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                  />
+                  <label className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs cursor-pointer shrink-0 flex items-center gap-1.5 transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Browse</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.ppt,.pptx"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setFinalSlidesFileName(file.name);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 4. Prototype / Live Demo URL */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Prototype / Hosted Live Demo URL</span>
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400">Optional</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://my-project-demo.vercel.app or Google Drive video link"
+                  value={finalDemoUrl}
+                  onChange={(e) => setFinalDemoUrl(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                />
+              </div>
+
+              {/* 5. Notes / Remarks */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 block">
+                  Remarks / Special Instructions for Evaluators
+                </label>
+                <textarea
+                  rows={2}
+                  value={finalRemarks}
+                  onChange={(e) => setFinalRemarks(e.target.value)}
+                  placeholder="Any test credentials, build instructions, or additional notes..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] resize-none"
+                />
+              </div>
+
+              {/* Actions Footer */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsFinalModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:text-slate-800 hover:bg-slate-100 font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingFinal}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold transition-all shadow-md hover:shadow-lg disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSubmittingFinal ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Deliverables...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Submit Final Deliverables</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Success Notification Toast ─── */}
+      {finalSuccessToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="bg-[#10334A] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-xs font-semibold border border-white/10">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{finalSuccessToast}</span>
+            <button
+              onClick={() => setFinalSuccessToast(null)}
+              className="ml-2 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Request to Add Record Modal ─── */}
+      <RequestRecordModal
+        isOpen={isRequestModalOpen}
+        onClose={() => setIsRequestModalOpen(false)}
+        initialAfn={afn}
+        onRequestSubmitted={handleRecordRequestSubmitted}
+      />
     </div>
+    </>
   );
 }
 

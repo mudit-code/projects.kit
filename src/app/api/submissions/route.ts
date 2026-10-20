@@ -19,7 +19,14 @@ export async function GET(request: NextRequest) {
     }
 
     const all = await getAllServerSubmissions();
-    return NextResponse.json({ success: true, submissions: all });
+    return NextResponse.json(
+      { success: true, submissions: all },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+        },
+      }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err?.message || "Failed to load submissions" },

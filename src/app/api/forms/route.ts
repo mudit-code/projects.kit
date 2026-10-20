@@ -10,48 +10,24 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get("year");
     const section = searchParams.get("section");
 
-    const where: any = { isTrashed: false };
-    if (status) where.status = status;
-    if (course) where.course = course;
-    if (year) where.year = year;
-    if (section) where.section = section;
+    const allForms = await getAllServerForms();
+    let forms = allForms;
+    if (status && status !== "ALL" && status !== "All") forms = forms.filter((f) => f.status === status);
+    if (course && course !== "All" && course !== "All Courses") forms = forms.filter((f) => f.course === course);
+    if (year && year !== "All" && year !== "All Years") forms = forms.filter((f) => f.year === year);
+    if (section && section !== "All" && section !== "All Sections") forms = forms.filter((f) => f.section === section);
 
-    const forms = await prisma.form.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-    });
-
-    return NextResponse.json({
-      success: true,
-      forms: forms.map((f) => ({
-        id: f.id,
-        subjectCode: f.subjectCode,
-        title: f.title,
-        course: f.course,
-        stream: f.stream,
-        year: f.year,
-        section: f.section,
-        category: f.category,
-        projectType: f.projectType,
-        customProjectName: f.customProjectName,
-        startDate: f.startDate,
-        deadline: f.deadline,
-        publishedAt: f.publishedAt,
-        status: f.status,
-        publishedBy: f.publishedBy,
-        assignedTo: f.assignedTo,
-        coordinator: {
-          name: f.coordinatorName,
-          email: f.coordinatorEmail,
-          phone: f.coordinatorPhone,
-          role: f.coordinatorRole,
+    return NextResponse.json(
+      {
+        success: true,
+        forms,
+      },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
         },
-        finalSubmissionOpen: f.finalSubmissionOpen,
-        finalSubmissionDeadline: f.finalSubmissionDeadline,
-        presentationsScheduled: f.presentationsScheduled,
-        presentationsConfig: f.presentationsConfig ? JSON.parse(f.presentationsConfig) : null,
-      })),
-    });
+      }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: err?.message || "Failed to fetch forms" },
