@@ -220,51 +220,6 @@ export function PageLoadingProvider({ children }: { children: React.ReactNode })
     }
   }, [endNavigation]);
 
-  // Intercept Global fetch calls for any request taking > 100 ms
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const originalFetch = window.fetch;
-
-    window.fetch = async function (...args) {
-      activeFetchesRef.current += 1;
-
-      // Start 100ms threshold timer
-      if (!fetchTimerRef.current && !isFullViewLoading && !isDashboardTabLoading) {
-        fetchTimerRef.current = setTimeout(() => {
-          if (activeFetchesRef.current > 0) {
-            const currentPath = window.location.pathname;
-            if (isDashboardPath(currentPath)) {
-              setIsDashboardTabLoading(true);
-            } else {
-              setIsFullViewLoading(true);
-            }
-            setIsNavComplete(false);
-          }
-        }, 100);
-      }
-
-      try {
-        const response = await originalFetch.apply(this, args);
-        return response;
-      } finally {
-        activeFetchesRef.current = Math.max(0, activeFetchesRef.current - 1);
-
-        if (activeFetchesRef.current === 0) {
-          if (fetchTimerRef.current) {
-            clearTimeout(fetchTimerRef.current);
-            fetchTimerRef.current = null;
-          }
-          // If the loader was triggered because request took > 100ms, finish and dismiss it
-          endNavigation();
-        }
-      }
-    };
-
-    return () => {
-      window.fetch = originalFetch;
-    };
-  }, [isFullViewLoading, isDashboardTabLoading, endNavigation]);
 
   // Intercept internal link clicks and browser history navigation
   useEffect(() => {

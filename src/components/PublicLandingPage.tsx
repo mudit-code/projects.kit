@@ -101,6 +101,7 @@ type PublicSubmission = {
   teamMembers: TeamMember[];
   submittedAt: string;
   verificationStatus: "pending" | "verified" | "rejected";
+  approvalStatus?: "approved" | "not_approved" | "pending" | string;
   finalSubmission?: {
     reportFileName?: string;
     repoUrl?: string;
@@ -117,6 +118,71 @@ const STORAGE_KEY = "kit_public_submissions";
 const LONG_PRESS_MS = 1200; // 1.2s long-press to trigger admin access on mobile
 
 /* ─── Helpers ─── */
+export function getSubmissionApprovalStatus(
+  sub: any,
+  formId?: string,
+  studentAfn?: string
+): "approved" | "not_approved" | "pending" {
+  if (!sub) return "pending";
+
+  const appStatus = String(sub.approvalStatus || "").toLowerCase();
+  const verStatus = String(sub.verificationStatus || "").toLowerCase();
+
+  if (appStatus === "approved" || verStatus === "verified" || verStatus === "approved") {
+    return "approved";
+  }
+  if (
+    appStatus === "not_approved" ||
+    appStatus === "rejected" ||
+    verStatus === "rejected" ||
+    verStatus === "not_approved"
+  ) {
+    return "not_approved";
+  }
+
+  // Cross-reference with localStorage kit_approvals_${formId}
+  const storage =
+    typeof window !== "undefined" && window.localStorage
+      ? window.localStorage
+      : typeof globalThis !== "undefined" && (globalThis as any).localStorage
+      ? (globalThis as any).localStorage
+      : null;
+
+  if (storage) {
+    const afn = String(studentAfn || sub.student?.afn || sub.studentAfn || "").trim().toUpperCase();
+    const fId = formId || sub.formId;
+
+    if (fId && afn) {
+      try {
+        const stored = storage.getItem(`kit_approvals_${fId}`);
+        if (stored) {
+          const map = JSON.parse(stored);
+          const val = (map[afn] || map[afn.toLowerCase()])?.toLowerCase();
+          if (val === "approved") return "approved";
+          if (val === "not_approved") return "not_approved";
+        }
+      } catch {}
+    }
+
+    // Fallback: check all kit_approvals_* keys
+    if (afn) {
+      try {
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key && key.startsWith("kit_approvals_")) {
+            const map = JSON.parse(storage.getItem(key) || "{}");
+            const val = (map[afn] || map[afn.toLowerCase()])?.toLowerCase();
+            if (val === "approved") return "approved";
+            if (val === "not_approved") return "not_approved";
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return "pending";
+}
+
 function loadSubmissions(): Record<string, PublicSubmission[]> {
   if (typeof window === "undefined") return {};
   try {
@@ -228,6 +294,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const studentCacheRef = useRef<Map<string, StudentRecord>>(new Map());
+  const isSyncingFormsRef = useRef(false);
 
   // Registration form state
   const [registrationType, setRegistrationType] = useState<"individual" | "group">("individual");
@@ -472,15 +539,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     };
   }, []);
 
-  // Lock body scroll when registration form is open so only the form content scrolls
-  useEffect(() => {
-    if (step === "register") {
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = "";
-      };
-    }
-  }, [step]);
+
 
   /* ─── Load Forms For Student ─── */
   const loadFormsForStudent = useCallback(async (data: StudentRecord) => {
@@ -509,13 +568,27 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
             const sub = rawSub as any;
             const sAfn = (sub.student?.afn || sub.studentAfn || "").trim().toUpperCase();
             const sRoll = (sub.student?.rollNumber || sub.studentRollNumber || "").trim().toUpperCase();
+            const formatMatchedSub = (raw: any): PublicSubmission => {
+              const effectiveStatus = getSubmissionApprovalStatus(raw, formId, trimmedAfn);
+              return {
+                ...raw,
+                approvalStatus: effectiveStatus,
+                verificationStatus:
+                  effectiveStatus === "approved"
+                    ? "verified"
+                    : effectiveStatus === "not_approved"
+                    ? "rejected"
+                    : "pending",
+              } as PublicSubmission;
+            };
+
             if (
               (trimmedAfn && sAfn === trimmedAfn.toUpperCase()) ||
               (trimmedRoll && sRoll === trimmedRoll.toUpperCase()) ||
               (trimmedAfn && sRoll === trimmedAfn.toUpperCase()) ||
               (trimmedRoll && sAfn === trimmedRoll.toUpperCase())
             ) {
-              return sub as PublicSubmission;
+              return formatMatchedSub(sub);
             }
             const members = (sub.teamMembers || []) as any[];
             for (const tm of members) {
@@ -527,7 +600,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 (trimmedAfn && tmRoll === trimmedAfn.toUpperCase()) ||
                 (trimmedRoll && tmAfn === trimmedRoll.toUpperCase())
               ) {
-                return sub as PublicSubmission;
+                return formatMatchedSub(sub);
               }
             }
           }
@@ -600,6 +673,9 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
     setLoading(false);
     setStep("forms");
 
+    if (isSyncingFormsRef.current) return;
+    isSyncingFormsRef.current = true;
+
     // Fetch fresh forms and submissions concurrently in background
     try {
       const [formsRes, subsRes] = await Promise.all([
@@ -619,7 +695,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       if (subsRes?.success && subsRes.submissions) {
         freshSubs = { ...localSubs, ...subsRes.submissions };
         try {
-          saveSubmissions(freshSubs);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(freshSubs));
         } catch {}
       }
 
@@ -627,8 +703,30 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       setForms(freshEligible);
     } catch {
       // background update silently catches
+    } finally {
+      isSyncingFormsRef.current = false;
     }
   }, []);
+
+  // Real-time synchronization when submissions or approvals are modified externally
+  useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const handleSubmissionsChange = () => {
+      if (student && !isSyncingFormsRef.current) {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          loadFormsForStudent(student);
+        }, 150);
+      }
+    };
+    window.addEventListener("kit-submissions-change", handleSubmissionsChange);
+    window.addEventListener("storage", handleSubmissionsChange);
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("kit-submissions-change", handleSubmissionsChange);
+      window.removeEventListener("storage", handleSubmissionsChange);
+    };
+  }, [student, loadFormsForStudent]);
 
   /* ─── Fetch Student ─── */
   const handleAfnSubmit = useCallback(
@@ -1426,10 +1524,41 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                               </span>
                             </>
                           ) : isRegistered ? (
-                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Registered</span>
-                            </span>
+                            <>
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Registered</span>
+                              </span>
+                              {(() => {
+                                const app = getSubmissionApprovalStatus(
+                                  form.submission,
+                                  form.id,
+                                  student.afn
+                                );
+                                if (app === "approved") {
+                                  return (
+                                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border-emerald-200">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Approved</span>
+                                    </span>
+                                  );
+                                }
+                                if (app === "not_approved") {
+                                  return (
+                                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-red-50 text-red-700 border-red-200">
+                                      <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                                      <span>Not Approved</span>
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border-amber-200">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>Pending Approval</span>
+                                  </span>
+                                );
+                              })()}
+                            </>
                           ) : (
                             <span
                               className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${
@@ -1998,7 +2127,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                     <span className="text-slate-500">Status</span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
                       <Clock className="w-2.5 h-2.5" />
-                      Pending Verification
+                      Pending Review
                     </span>
                   </div>
                 </div>
@@ -2060,57 +2189,77 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 </div>
 
                 <div className="p-6 space-y-5">
-                  {/* Verification Status */}
-                  <div
-                    className={`p-4 rounded-xl border flex items-center gap-3 ${
-                      existingSubmission.verificationStatus === "verified"
-                        ? "bg-emerald-50 border-emerald-200"
-                        : existingSubmission.verificationStatus === "rejected"
-                        ? "bg-red-50 border-red-200"
-                        : "bg-amber-50 border-amber-200"
-                    }`}
-                  >
-                    {existingSubmission.verificationStatus === "verified" ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                    ) : existingSubmission.verificationStatus === "rejected" ? (
-                      <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-                    ) : (
-                      <Clock className="w-5 h-5 text-amber-600 shrink-0" />
-                    )}
-                    <div>
+                  {/* Approval Status Banner */}
+                  {(() => {
+                    const currentApproval = getSubmissionApprovalStatus(
+                      existingSubmission,
+                      selectedForm?.id,
+                      student?.afn
+                    );
+                    const isApproved = currentApproval === "approved";
+                    const isNotApproved = currentApproval === "not_approved";
+
+                    return (
                       <div
-                        className={`text-xs font-bold ${
-                          existingSubmission.verificationStatus === "verified"
-                            ? "text-emerald-800"
-                            : existingSubmission.verificationStatus ===
-                              "rejected"
-                            ? "text-red-800"
-                            : "text-amber-800"
+                        className={`p-4 rounded-xl border flex items-center gap-3.5 transition-colors ${
+                          isApproved
+                            ? "bg-emerald-50 border-emerald-200"
+                            : isNotApproved
+                            ? "bg-red-50 border-red-200"
+                            : "bg-amber-50 border-amber-200"
                         }`}
                       >
-                        Verification Status:{" "}
-                        <span className="capitalize">
-                          {existingSubmission.verificationStatus}
-                        </span>
+                        {isApproved ? (
+                          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          </div>
+                        ) : isNotApproved ? (
+                          <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                          </div>
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                            <Clock className="w-5 h-5 text-amber-600" />
+                          </div>
+                        )}
+                        <div>
+                          <div
+                            className={`text-xs font-bold ${
+                              isApproved
+                                ? "text-emerald-800"
+                                : isNotApproved
+                                ? "text-red-800"
+                                : "text-amber-800"
+                            }`}
+                          >
+                            Approval Status:{" "}
+                            <span>
+                              {isApproved
+                                ? "Approved"
+                                : isNotApproved
+                                ? "Not Approved"
+                                : "Pending Review"}
+                            </span>
+                          </div>
+                          <p
+                            className={`text-[11px] mt-0.5 leading-relaxed ${
+                              isApproved
+                                ? "text-emerald-700"
+                                : isNotApproved
+                                ? "text-red-700"
+                                : "text-amber-700"
+                            }`}
+                          >
+                            {isApproved
+                              ? "Your project registration has been approved & verified by your project coordinator."
+                              : isNotApproved
+                              ? "Your registration was marked as not approved. Please contact your coordinator."
+                              : "Your submission is pending review by the project coordinator."}
+                          </p>
+                        </div>
                       </div>
-                      <p
-                        className={`text-[11px] mt-0.5 ${
-                          existingSubmission.verificationStatus === "verified"
-                            ? "text-emerald-700"
-                            : existingSubmission.verificationStatus ===
-                              "rejected"
-                            ? "text-red-700"
-                            : "text-amber-700"
-                        }`}
-                      >
-                        {existingSubmission.verificationStatus === "verified"
-                          ? "Your project has been verified by the coordinator."
-                          : existingSubmission.verificationStatus === "rejected"
-                          ? "Your submission was rejected. Please contact your coordinator."
-                          : "Your submission is pending review by the project coordinator."}
-                      </p>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Project Details */}
                   <div className="space-y-3">
@@ -2344,9 +2493,36 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
                 {/* Footer */}
                 <div className="px-6 py-4 bg-slate-50/50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <p className="text-[10px] text-slate-400">
-                    Verified by the concerned project coordinator
-                  </p>
+                  {(() => {
+                    const currentApproval = getSubmissionApprovalStatus(
+                      existingSubmission,
+                      selectedForm?.id,
+                      student?.afn
+                    );
+                    const isApproved = currentApproval === "approved";
+                    const isNotApproved = currentApproval === "not_approved";
+
+                    return (
+                      <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1.5">
+                        {isApproved ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700 font-semibold">Approved & verified by the project coordinator</span>
+                          </>
+                        ) : isNotApproved ? (
+                          <>
+                            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                            <span className="text-red-700 font-semibold">Not approved by the project coordinator</span>
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3.5 h-3.5 text-amber-500" />
+                            <span className="text-slate-500">Pending review by the concerned project coordinator</span>
+                          </>
+                        )}
+                      </p>
+                    );
+                  })()}
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setStep("forms")}

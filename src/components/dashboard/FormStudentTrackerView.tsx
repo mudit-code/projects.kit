@@ -55,6 +55,7 @@ type SubmissionInfo = {
   registrationType?: "individual" | "group";
   submittedAt?: string;
   verificationStatus?: string;
+  approvalStatus?: string;
   isLead?: boolean;
   roleInTeam?: string;
   teamMembers?: Array<{ afn: string; name: string; whatsapp?: string }>;
@@ -239,7 +240,61 @@ export function FormStudentTrackerView({
     } catch {
       // ignore
     }
-    // Sync to database via API
+
+    const effectiveVerification = status === "approved" ? "verified" : "not_approved";
+
+    // Synchronize kit_public_submissions so student view reads approved immediately
+    try {
+      const rawPublic = localStorage.getItem("kit_public_submissions");
+      if (rawPublic) {
+        const publicSubs: Record<string, any[]> = JSON.parse(rawPublic);
+        let modified = false;
+        for (const key of Object.keys(publicSubs)) {
+          if (Array.isArray(publicSubs[key])) {
+            publicSubs[key] = publicSubs[key].map((sub: any) => {
+              const sAfn = String(sub.student?.afn || sub.studentAfn || "").trim().toUpperCase();
+              const isLead = sAfn === afn.trim().toUpperCase();
+              const isMember =
+                Array.isArray(sub.teamMembers) &&
+                sub.teamMembers.some((m: any) => String(m.afn || "").trim().toUpperCase() === afn.trim().toUpperCase());
+              if (isLead || isMember) {
+                modified = true;
+                return {
+                  ...sub,
+                  approvalStatus: status,
+                  verificationStatus: effectiveVerification,
+                };
+              }
+              return sub;
+            });
+          }
+        }
+        if (modified) {
+          localStorage.setItem("kit_public_submissions", JSON.stringify(publicSubs));
+        }
+      }
+    } catch {}
+
+    // Synchronize serverSubmissions in local state
+    setServerSubmissions((prev) =>
+      prev.map((sub: any) => {
+        const sAfn = String(sub.student?.afn || sub.studentAfn || "").trim().toUpperCase();
+        const isLead = sAfn === afn.trim().toUpperCase();
+        const isMember =
+          Array.isArray(sub.teamMembers) &&
+          sub.teamMembers.some((m: any) => String(m.afn || "").trim().toUpperCase() === afn.trim().toUpperCase());
+        if (isLead || isMember) {
+          return {
+            ...sub,
+            approvalStatus: status,
+            verificationStatus: effectiveVerification,
+          };
+        }
+        return sub;
+      })
+    );
+
+    // Sync to database via API with both approvalStatus and verificationStatus
     fetch("/api/submissions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -247,8 +302,14 @@ export function FormStudentTrackerView({
         formId,
         studentAfn: afn,
         approvalStatus: status,
+        verificationStatus: effectiveVerification,
       }),
     }).catch(() => {});
+
+    // Broadcast change across tabs and components
+    window.dispatchEvent(new Event("kit-submissions-change"));
+    window.dispatchEvent(new Event("kit-initiatives-change"));
+
     showToast(status === "approved" ? "Registration marked as Approved." : "Registration marked as Not Approved.");
   };
 
@@ -430,6 +491,31 @@ export function FormStudentTrackerView({
             // ignore
           }
         }
+
+        // Synchronize any server-side approval statuses into approvals state and local storage
+        const serverApprovals: Record<string, "approved" | "not_approved"> = {};
+        for (const s of subs) {
+          const sAfn = String(s.student?.afn || s.studentAfn || "").trim();
+          const app = s.approvalStatus?.toLowerCase();
+          const ver = s.verificationStatus?.toLowerCase();
+          if (sAfn) {
+            if (app === "approved" || ver === "verified") {
+              serverApprovals[sAfn] = "approved";
+            } else if (app === "not_approved" || app === "rejected" || ver === "rejected" || ver === "not_approved") {
+              serverApprovals[sAfn] = "not_approved";
+            }
+          }
+        }
+        if (Object.keys(serverApprovals).length > 0) {
+          setApprovals((prev) => {
+            const merged = { ...serverApprovals, ...prev };
+            try {
+              localStorage.setItem(`kit_approvals_${formId}`, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+
         return subs;
       }
     } catch {
@@ -577,7 +663,10 @@ export function FormStudentTrackerView({
             projectDescription: sub.projectDescription || sub.description,
             registrationType: sub.registrationType || "individual",
             submittedAt: sub.submittedAt || sub.date || new Date().toISOString(),
-            verificationStatus: sub.verificationStatus || "verified",
+            verificationStatus: sub.verificationStatus || "pending",
+            approvalStatus:
+              sub.approvalStatus ||
+              (sub.verificationStatus === "verified" ? "approved" : "pending"),
             isLead: true,
             roleInTeam: "Team Lead",
             teamMembers: sub.teamMembers,
@@ -612,7 +701,10 @@ export function FormStudentTrackerView({
             projectDescription: sub.projectDescription || sub.description,
             registrationType: sub.registrationType || "group",
             submittedAt: sub.submittedAt || sub.date || new Date().toISOString(),
-            verificationStatus: sub.verificationStatus || "verified",
+            verificationStatus: sub.verificationStatus || "pending",
+            approvalStatus:
+              sub.approvalStatus ||
+              (sub.verificationStatus === "verified" ? "approved" : "pending"),
             isLead: false,
             roleInTeam: "Team Member",
             teamMembers: sub.teamMembers || sub.members,
@@ -660,6 +752,28 @@ export function FormStudentTrackerView({
     });
   }, [relevantStudents, form, formId, isRefreshing, refreshTick, serverSubmissions]);
 
+  // Helper to determine approval status of a student consistently
+  const getApprovalStatus = useCallback(
+    (
+      student: { afn: string; isSubmitted?: boolean; submission?: SubmissionInfo | null },
+      submissionOverride?: SubmissionInfo | null
+    ): "approved" | "not_approved" | "pending" => {
+      const afn = student.afn;
+      if (student.isSubmitted === false && !submissionOverride) return "pending";
+      if (approvals[afn] === "approved") return "approved";
+      if (approvals[afn] === "not_approved") return "not_approved";
+      const sub = submissionOverride || student.submission;
+      const subApp = sub?.approvalStatus?.toLowerCase();
+      const subVer = sub?.verificationStatus?.toLowerCase();
+      if (subApp === "approved" || subVer === "verified") return "approved";
+      if (subApp === "not_approved" || subApp === "rejected" || subVer === "rejected" || subVer === "not_approved") {
+        return "not_approved";
+      }
+      return "pending";
+    },
+    [approvals]
+  );
+
   // 5. Counts & Metrics
   const totalCount = studentsWithStatus.length;
   const registeredCount = useMemo(
@@ -669,8 +783,8 @@ export function FormStudentTrackerView({
   const pendingCount = totalCount - registeredCount;
 
   const approvedCount = useMemo(
-    () => studentsWithStatus.filter((s) => s.isSubmitted && approvals[s.afn] === "approved").length,
-    [studentsWithStatus, approvals]
+    () => studentsWithStatus.filter((s) => s.isSubmitted && getApprovalStatus(s) === "approved").length,
+    [studentsWithStatus, getApprovalStatus]
   );
   const notApprovedCount = registeredCount - approvedCount;
   const needsReviewCount = notApprovedCount;
@@ -709,8 +823,9 @@ export function FormStudentTrackerView({
   // 6. Filtering & Searching
   const filteredList = useMemo(() => {
     return studentsWithStatus.filter((item) => {
-      const isApproved = item.isSubmitted && approvals[item.afn] === "approved";
-      const isNotApproved = item.isSubmitted && approvals[item.afn] !== "approved";
+      const appStatus = getApprovalStatus(item);
+      const isApproved = appStatus === "approved";
+      const isNotApproved = appStatus === "not_approved";
 
       if (statusFilter === "PENDING" && item.isSubmitted) return false;
       if (statusFilter === "REGISTERED" && !item.isSubmitted) return false;
@@ -731,7 +846,7 @@ export function FormStudentTrackerView({
 
       return true;
     });
-  }, [studentsWithStatus, statusFilter, searchQuery, approvals]);
+  }, [studentsWithStatus, statusFilter, searchQuery, getApprovalStatus]);
 
   // 7. Pagination
   const totalPages = Math.max(1, Math.ceil(filteredList.length / ROWS_PER_PAGE));
@@ -788,7 +903,7 @@ export function FormStudentTrackerView({
         String(s.rollNumber),
         s.email,
         s.isSubmitted ? "Registered" : "Pending",
-        s.isSubmitted ? (approvals[s.afn] === "approved" ? "Approved" : "Not Approved") : "-",
+        s.isSubmitted ? (getApprovalStatus(s) === "approved" ? "Approved" : "Not Approved") : "-",
         s.submission?.projectName || "-",
         s.submission?.registrationType === "group"
           ? `Group (${(s.submission.teamMembers?.length || 0) + 1})`
@@ -864,7 +979,7 @@ export function FormStudentTrackerView({
       `="${s.rollNumber}"`,
       `"${s.email}"`,
       s.isSubmitted ? "Registered" : "Pending",
-      s.isSubmitted ? (approvals[s.afn] === "approved" ? "Approved" : "Not Approved") : "-",
+      s.isSubmitted ? (getApprovalStatus(s) === "approved" ? "Approved" : "Not Approved") : "-",
       `"${(s.submission?.projectName || "-").replace(/"/g, '""')}"`,
       s.submission?.registrationType === "group"
         ? `Group (${(s.submission.teamMembers?.length || 0) + 1})`
@@ -932,7 +1047,7 @@ export function FormStudentTrackerView({
             <td>
               ${
                 s.isSubmitted
-                  ? approvals[s.afn] === "approved"
+                  ? getApprovalStatus(s) === "approved"
                     ? '<span style="color: #15803d; font-weight: 700;">Approved</span>'
                     : '<span style="color: #b45309; font-weight: 600;">Not Approved</span>'
                   : '<span style="color: #94a3b8;">-</span>'
@@ -1922,7 +2037,9 @@ export function FormStudentTrackerView({
                   const globalIdx = (currentPage - 1) * ROWS_PER_PAGE + idx + 1;
                   const isSelected = selectedAfns.has(st.afn);
                   const isSelectionMode = selectedAfns.size > 0;
-                  const isApproved = st.isSubmitted && approvals[st.afn] === "approved";
+                  const appStatus = getApprovalStatus(st);
+                  const isApproved = st.isSubmitted && appStatus === "approved";
+                  const isNotApproved = st.isSubmitted && appStatus === "not_approved";
 
                   return (
                     <tr
@@ -2009,7 +2126,7 @@ export function FormStudentTrackerView({
                         )}
                       </td>
 
-                      {/* Approval Column: Approved / Not Approved */}
+                      {/* Approval Column: Approved / Not Approved / Pending Review */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         {st.isSubmitted ? (
                           isApproved ? (
@@ -2017,9 +2134,13 @@ export function FormStudentTrackerView({
                               <Check className="w-3.5 h-3.5 text-emerald-600" />
                               <span>Approved</span>
                             </span>
+                          ) : isNotApproved ? (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                              Not Approved
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                              Not Approved
+                              Pending Review
                             </span>
                           )
                         ) : (
@@ -2123,35 +2244,79 @@ export function FormStudentTrackerView({
             </div>
 
             {/* Approval Action Banner */}
-            <div className="p-3 rounded-xl border flex items-center justify-between gap-3 text-xs bg-slate-50 border-slate-200">
-              <div>
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                  Approval Status
-                </span>
-                <strong className={approvals[selectedSubmission.student.afn] === "approved" ? "text-emerald-700 font-bold" : "text-amber-700 font-bold"}>
-                  {approvals[selectedSubmission.student.afn] === "approved" ? "Approved" : "Not Approved"}
-                </strong>
-              </div>
+            {(() => {
+              const currentStatus = getApprovalStatus(
+                selectedSubmission.student,
+                selectedSubmission.submission
+              );
+              const isApproved = currentStatus === "approved";
+              const isNotApproved = currentStatus === "not_approved";
 
-              {approvals[selectedSubmission.student.afn] === "approved" ? (
-                <button
-                  type="button"
-                  onClick={() => setApprovalForStudent(selectedSubmission.student.afn, "not_approved")}
-                  className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs transition-colors cursor-pointer"
+              return (
+                <div
+                  className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                    isApproved
+                      ? "bg-emerald-50/70 border-emerald-200"
+                      : isNotApproved
+                      ? "bg-red-50/70 border-red-200"
+                      : "bg-amber-50/70 border-amber-200"
+                  }`}
                 >
-                  Mark as Not Approved
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setApprovalForStudent(selectedSubmission.student.afn, "approved")}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Approve Registration</span>
-                </button>
-              )}
-            </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                      Approval Status
+                    </span>
+                    <strong
+                      className={`text-sm ${
+                        isApproved
+                          ? "text-emerald-700"
+                          : isNotApproved
+                          ? "text-red-700"
+                          : "text-amber-700"
+                      }`}
+                    >
+                      {isApproved
+                        ? "Approved"
+                        : isNotApproved
+                        ? "Not Approved"
+                        : "Pending Review"}
+                    </strong>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isApproved ? (
+                      <button
+                        type="button"
+                        onClick={() => setApprovalForStudent(selectedSubmission.student.afn, "not_approved")}
+                        className="px-3 py-1.5 rounded-xl border border-amber-200 bg-white hover:bg-amber-50 text-amber-800 font-bold text-xs transition-colors cursor-pointer"
+                      >
+                        Mark as Not Approved
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setApprovalForStudent(selectedSubmission.student.afn, "approved")}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Approve Registration</span>
+                        </button>
+                        {!isNotApproved && (
+                          <button
+                            type="button"
+                            onClick={() => setApprovalForStudent(selectedSubmission.student.afn, "not_approved")}
+                            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-red-50 hover:text-red-700 hover:border-red-200 text-slate-600 font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            Mark Not Approved
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {selectedSubmission.submission.projectDescription && (
               <div>

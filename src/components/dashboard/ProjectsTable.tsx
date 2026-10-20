@@ -241,8 +241,8 @@ export function ProjectsTable() {
           const isSuccessful =
             sub.status?.toLowerCase() === "completed" ||
             sub.finalSubmissionCompleted === true ||
-            (sub.verificationStatus?.toLowerCase() === "verified" &&
-              sub.approvalStatus?.toLowerCase() === "approved");
+            sub.verificationStatus?.toLowerCase() === "verified" ||
+            sub.approvalStatus?.toLowerCase() === "approved";
 
           if (isSuccessful) {
             result.push({

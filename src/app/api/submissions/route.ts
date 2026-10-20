@@ -77,13 +77,46 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // Keep verificationStatus and approvalStatus strictly synchronized
+    let finalApproval = approvalStatus;
+    let finalVerification = verificationStatus;
+
+    if (finalApproval && !finalVerification) {
+      const lower = String(finalApproval).toLowerCase();
+      if (lower === "approved") {
+        finalVerification = "verified";
+      } else if (lower === "not_approved" || lower === "rejected") {
+        finalVerification = "rejected";
+      } else {
+        finalVerification = "pending";
+      }
+    } else if (finalVerification && !finalApproval) {
+      const lower = String(finalVerification).toLowerCase();
+      if (lower === "verified" || lower === "approved") {
+        finalApproval = "approved";
+      } else if (lower === "rejected" || lower === "not_approved") {
+        finalApproval = "not_approved";
+      } else {
+        finalApproval = "pending";
+      }
+    } else if (finalApproval && finalVerification) {
+      const lower = String(finalApproval).toLowerCase();
+      if (lower === "approved") finalVerification = "verified";
+      else if (lower === "not_approved" || lower === "rejected") finalVerification = "rejected";
+    }
+
     const updated = await prisma.submission.update({
       where: { id: sub.id },
       data: {
-        ...(verificationStatus ? { verificationStatus } : {}),
-        ...(approvalStatus ? { approvalStatus } : {}),
+        ...(finalVerification ? { verificationStatus: finalVerification } : {}),
+        ...(finalApproval ? { approvalStatus: finalApproval } : {}),
       },
     });
+
+    try {
+      const { invalidateServerSubmissionsCache } = await import("@/lib/serverForms");
+      invalidateServerSubmissionsCache();
+    } catch {}
 
     return NextResponse.json({ success: true, submission: updated });
   } catch (err: any) {
