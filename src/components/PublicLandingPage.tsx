@@ -280,6 +280,7 @@ let hasPlayedLandingIntro = false;
 export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   // ── V3 intro animation state ─────────────────────────────────────────
   const heroLogoRef = useRef<HTMLDivElement | null>(null);
+  const mobileHeroLogoRef = useRef<HTMLDivElement | null>(null);
   const [showIntro, setShowIntro] = useState(() => !hasPlayedLandingIntro);
   const [introRevealing, setIntroRevealing] = useState(false); // page fading in
 
@@ -1129,22 +1130,29 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       {showIntro && (
         <PageIntroAnimation
           heroLogoRef={heroLogoRef}
+          mobileHeroLogoRef={mobileHeroLogoRef}
           onStartReveal={() => setIntroRevealing(true)}
           onComplete={() => setShowIntro(false)}
         />
       )}
 
       {/* ── Native Mobile Experience (< 768px): Dedicated MobileShell ── */}
-      <div className="block md:hidden w-full h-[100dvh] overflow-hidden">
-        <StudentMobileApp onAdminAccess={triggerHiddenLogin} />
+      <div
+        className="block md:hidden w-full h-[100dvh] overflow-hidden"
+        style={{
+          opacity: showIntro && !introRevealing ? 0 : 1,
+          transition: introRevealing ? 'opacity 0.4s ease' : 'none',
+        }}
+      >
+        <StudentMobileApp onAdminAccess={triggerHiddenLogin} heroLogoRef={mobileHeroLogoRef} />
       </div>
 
       {/* ── Desktop Experience (≥ 768px): Desktop Shell ──────── */}
       <div
         className={`hidden md:flex bg-[#F6F5F2] flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"} w-full max-w-full overflow-x-hidden`}
         style={{
-          opacity:    showIntro && !introRevealing ? 0 : 1,
-          transition: introRevealing ? 'opacity 0.55s ease' : 'none',
+          opacity: showIntro && !introRevealing ? 0 : 1,
+          transition: introRevealing ? 'opacity 0.4s ease' : 'none',
         }}
       >
       {/* ─── Fixed Non-Scrolling Header ─── */}

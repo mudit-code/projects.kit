@@ -36,9 +36,10 @@ import { getSubmissionApprovalStatus } from "@/components/PublicLandingPage";
 
 export interface StudentMobileAppProps {
   onAdminAccess?: () => void;
+  heroLogoRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export function StudentMobileApp({ onAdminAccess }: StudentMobileAppProps = {}) {
+export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAppProps = {}) {
   const router = useRouter();
 
   // Secret Admin Access via Long Press (Tap & Hold on Logo for 850ms)
@@ -398,6 +399,7 @@ export function StudentMobileApp({ onAdminAccess }: StudentMobileAppProps = {}) 
         {/* Hero Branding with Official projects.kit Geometric Logo (Tap & hold supported) */}
         <div className="pt-2 sm:pt-4 text-center space-y-3">
           <div
+            ref={heroLogoRef}
             onTouchStart={handleLogoPointerDown}
             onTouchMove={handleLogoTouchMove}
             onTouchEnd={handleLogoPointerUp}

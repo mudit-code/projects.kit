@@ -18,20 +18,24 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 type Phase = 'playing' | 'flying' | 'done';
 
 export interface PageIntroAnimationProps {
-  /** Ref to the hero logo wrapper element in the landing page */
+  /** Ref to the desktop hero logo wrapper element in the landing page */
   heroLogoRef: React.RefObject<HTMLElement | null>;
+  /** Optional ref to the mobile hero logo wrapper element */
+  mobileHeroLogoRef?: React.RefObject<HTMLElement | null>;
   /** Fired when the overlay is completely gone */
   onComplete: () => void;
   /** Fired when the logo starts moving — page should begin fading in */
   onStartReveal: () => void;
 }
 
-const LOGO_CONSTRUCT_MS = 4800; // logo fully drawn by this point
-const FLY_DURATION_MS   = 520;  // logo-fly + overlay-fade duration
-const REVEAL_DELAY_MS   = 80;   // tiny offset before page fade starts
+// 1.5x faster timing: 4800 / 1.5 = 3200ms
+const LOGO_CONSTRUCT_MS = 3200; // logo fully drawn by this point
+const FLY_DURATION_MS   = 380;  // logo-fly + overlay-fade duration (smooth FLIP transition)
+const REVEAL_DELAY_MS   = 50;   // offset before page fade starts
 
 export function PageIntroAnimation({
   heroLogoRef,
+  mobileHeroLogoRef,
   onComplete,
   onStartReveal,
 }: PageIntroAnimationProps) {
@@ -68,15 +72,21 @@ export function PageIntroAnimation({
     stageElem.style.setProperty('--s',  String(sc));
   }, []);
 
-  // FLIP transition: fly logo from centre → hero position
+  // FLIP transition: fly logo from centre → hero position (supports PC and Mobile)
   const startFlyTransition = useCallback(() => {
     const logoEl   = logoRef.current;
-    const heroEl   = heroLogoRef.current;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const activeHeroContainer = (isMobile && mobileHeroLogoRef?.current)
+      ? mobileHeroLogoRef.current
+      : (heroLogoRef.current || mobileHeroLogoRef?.current);
     const flyingEl = flyingLogoRef.current;
     const overlay  = overlayRef.current;
 
-    // Fallback: pure cross-fade if refs aren't ready
-    if (!logoEl || !heroEl || !flyingEl || !overlay) {
+    const targetSvg = activeHeroContainer?.querySelector('svg') || activeHeroContainer;
+    const sourceSvg = logoEl?.querySelector('svg') || logoEl;
+
+    // Fallback: pure cross-fade if target elements aren't ready
+    if (!sourceSvg || !targetSvg || !flyingEl || !overlay) {
       if (overlay) {
         overlay.style.transition = `opacity ${FLY_DURATION_MS}ms ease`;
         overlay.style.opacity    = '0';
@@ -84,12 +94,25 @@ export function PageIntroAnimation({
       }
       setTimeout(onStartReveal, REVEAL_DELAY_MS);
       setPhase('flying');
-      setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 60);
+      setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 40);
       return;
     }
 
-    const from = logoEl.getBoundingClientRect();
-    const to   = heroEl.getBoundingClientRect();
+    const from = sourceSvg.getBoundingClientRect();
+    const to   = targetSvg.getBoundingClientRect();
+
+    // Guard against 0-dimension target (e.g. collapsed)
+    if (to.width === 0 || to.height === 0) {
+      if (overlay) {
+        overlay.style.transition = `opacity ${FLY_DURATION_MS}ms ease`;
+        overlay.style.opacity    = '0';
+        overlay.style.pointerEvents = 'none';
+      }
+      setTimeout(onStartReveal, REVEAL_DELAY_MS);
+      setPhase('flying');
+      setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 40);
+      return;
+    }
 
     // Place flying SVG exactly over the animation logo
     Object.assign(flyingEl.style, {
@@ -102,18 +125,24 @@ export function PageIntroAnimation({
       opacity:        '1',
       transition:     'none',
       pointerEvents:  'none',
+      zIndex:         '100000',
     });
 
-    // Force reflow so browser registers the starting state
+    // Hide static logo in the stage so it does not duplicate during flight
+    if (logoEl) {
+      logoEl.style.opacity = '0';
+    }
+
+    // Force reflow so browser registers starting geometry
     void flyingEl.offsetWidth;
 
-    const easing = 'cubic-bezier(.4,0,.2,1)';
+    // Smooth physics-based FLIP flight straight into the page position
+    const easing = 'cubic-bezier(.22, 1, .36, 1)';
     flyingEl.style.transition = [
       `left ${FLY_DURATION_MS}ms ${easing}`,
       `top ${FLY_DURATION_MS}ms ${easing}`,
       `width ${FLY_DURATION_MS}ms ${easing}`,
       `height ${FLY_DURATION_MS}ms ${easing}`,
-      `opacity ${Math.round(FLY_DURATION_MS * 0.55)}ms ease ${Math.round(FLY_DURATION_MS * 0.45)}ms`,
     ].join(', ');
 
     Object.assign(flyingEl.style, {
@@ -121,18 +150,23 @@ export function PageIntroAnimation({
       top:     `${to.top}px`,
       width:   `${to.width}px`,
       height:  `${to.height}px`,
-      opacity: '0',
     });
 
-    // Fade the overlay (text + background) out simultaneously
+    // Fade the overlay background simultaneously
     overlay.style.transition    = `opacity ${FLY_DURATION_MS}ms ease`;
     overlay.style.opacity       = '0';
     overlay.style.pointerEvents = 'none';
 
+    // Reveal page content around the landing logo
     setTimeout(onStartReveal, REVEAL_DELAY_MS);
     setPhase('flying');
-    setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 60);
-  }, [heroLogoRef, onComplete, onStartReveal]);
+
+    // Settle cleanly into the page
+    setTimeout(() => {
+      setPhase('done');
+      onComplete();
+    }, FLY_DURATION_MS + 40);
+  }, [heroLogoRef, mobileHeroLogoRef, onComplete, onStartReveal]);
 
   // Start animation once mounted
   useEffect(() => {
@@ -192,10 +226,10 @@ export function PageIntroAnimation({
           display: flex; align-items: baseline; white-space: nowrap;
           text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased;
         }
-        .pki-w  { display:inline-block; opacity:0; animation:pki-rise .9s cubic-bezier(.22,1,.36,1) forwards; }
-        .pki-a  { animation-delay:.15s; }
-        .pki-k  { animation-delay:.8s; }
-        .pki-c  { display:inline-block; animation:pki-er .18s ease-in var(--d) forwards; }
+        .pki-w  { display:inline-block; opacity:0; animation:pki-rise .6s cubic-bezier(.22,1,.36,1) forwards; }
+        .pki-a  { animation-delay:.1s; }
+        .pki-k  { animation-delay:.53s; }
+        .pki-c  { display:inline-block; animation:pki-er .12s ease-in var(--d) forwards; }
         .pki-pp {
           display:inline-grid; align-items:baseline; justify-items:start;
           transform-origin: center center;
@@ -204,41 +238,41 @@ export function PageIntroAnimation({
           -webkit-backface-visibility: hidden;
           transform-style: preserve-3d;
           animation:
-            pki-pflight 1.15s cubic-bezier(.4, 0, .2, 1) 2.85s forwards,
-            pki-pcol  .4s  ease 3.5s forwards,
-            pki-pfade .7s  ease 4s   forwards;
+            pki-pflight .77s cubic-bezier(.4, 0, .2, 1) 1.9s forwards,
+            pki-pcol  .27s ease 2.33s forwards,
+            pki-pfade .47s ease 2.67s forwards;
         }
         .pki-pp * {
           backface-visibility: hidden;
           -webkit-backface-visibility: hidden;
           will-change: transform, opacity;
         }
-        .pki-gl { grid-area:1/1; animation:pki-out .25s ease 2.55s forwards; }
-        .pki-gu { grid-area:1/1; opacity:0; animation:pki-gin .3s cubic-bezier(.22,1,.36,1) 2.55s forwards; }
+        .pki-gl { grid-area:1/1; animation:pki-out .17s ease 1.7s forwards; }
+        .pki-gu { grid-area:1/1; opacity:0; animation:pki-gin .2s cubic-bezier(.22,1,.36,1) 1.7s forwards; }
         .pki-dot {
           display:inline-block; width:.2em; height:.2em; margin:0 .1em;
           background:#1C3A7F; border-radius:.05em;
           transform:rotate(45deg) scale(0);
           animation:
-            pki-dotin .6s cubic-bezier(.22,1.4,.4,1) .6s  forwards,
-            pki-out   .18s ease-in 2.05s forwards;
+            pki-dotin .4s cubic-bezier(.22,1.4,.4,1) .4s  forwards,
+            pki-out   .12s ease-in 1.37s forwards;
         }
         .pki-logo {
           position:absolute; inset:0; z-index:1; margin:auto;
           width:min(46vw,200px); height:min(46vw,200px);
           opacity:0; transform:scale(.2) rotate(-90deg);
           /* No lbeat / heartbeat — V3 stays static after construction */
-          animation:pki-pop .8s cubic-bezier(.2,1.3,.3,1) 2.9s forwards;
+          animation:pki-pop .53s cubic-bezier(.2,1.3,.3,1) 1.93s forwards;
         }
         .pki-stage svg { display:block; width:100%; height:100%; }
-        .pki-ed { stroke-dasharray:1; stroke-dashoffset:1; animation:pki-draw .5s ease-out forwards; }
-        .pki-e1 { animation-delay:3.9s;  } .pki-e2 { animation-delay:4s;    }
-        .pki-e3 { animation-delay:4.1s;  } .pki-e4 { animation-delay:4.2s;  }
+        .pki-ed { stroke-dasharray:1; stroke-dashoffset:1; animation:pki-draw .33s ease-out forwards; }
+        .pki-e1 { animation-delay:2.6s;  } .pki-e2 { animation-delay:2.67s; }
+        .pki-e3 { animation-delay:2.73s; } .pki-e4 { animation-delay:2.8s;  }
         .pki-np {
           transform-box:fill-box; transform-origin:center; transform:scale(0);
-          animation:pki-npop .45s cubic-bezier(.2,1.6,.4,1) forwards;
+          animation:pki-npop .3s cubic-bezier(.2,1.6,.4,1) forwards;
         }
-        .pki-n1 { animation-delay:3.85s; } .pki-n2 { animation-delay:3.95s; } .pki-n3 { animation-delay:4.05s; }
+        .pki-n1 { animation-delay:2.57s; } .pki-n2 { animation-delay:2.63s; } .pki-n3 { animation-delay:2.7s; }
         .pki-pl { transform-box:fill-box; transform-origin:center; }
         /* No .pki-done .pki-pl heartbeat — intentional for V3 */
         .pki-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
@@ -278,19 +312,19 @@ export function PageIntroAnimation({
                 <span className="pki-gl">p</span>
                 <span className="pki-gu">P</span>
               </span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.4s'  }}>r</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.35s' }}>o</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.3s'  }}>j</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.25s' }}>e</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.2s'  }}>c</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.15s' }}>t</span>
-              <span className="pki-c" style={{ ['--d' as any]: '2.1s'  }}>s</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.6s'  }}>r</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.57s' }}>o</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.53s' }}>j</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.5s'  }}>e</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.47s' }}>c</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.43s' }}>t</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.4s'  }}>s</span>
             </span>
             <span className="pki-dot" />
             <span className="pki-w pki-k">
-              <span className="pki-c" style={{ ['--d' as any]: '2s'    }}>k</span>
-              <span className="pki-c" style={{ ['--d' as any]: '1.95s' }}>i</span>
-              <span className="pki-c" style={{ ['--d' as any]: '1.9s'  }}>t</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.33s' }}>k</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.3s'  }}>i</span>
+              <span className="pki-c" style={{ ['--d' as any]: '1.27s' }}>t</span>
             </span>
           </div>
 
