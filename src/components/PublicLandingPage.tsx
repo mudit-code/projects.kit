@@ -270,6 +270,22 @@ interface PublicLandingPageProps {
   onAdminAccess?: () => void;
 }
 
+// Session storage key to ensure intro animation only plays once per session
+const INTRO_SESSION_KEY = "kit_intro_completed";
+
+function checkIntroSeen(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("intro") === "1" || params.get("intro") === "true") {
+      return false; // developer / testing bypass
+    }
+    return sessionStorage.getItem(INTRO_SESSION_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 // Module-scoped flag so the full V3 intro plays on initial page load / refresh,
 // but does not re-trigger during in-app navigation or step transitions.
 let hasPlayedLandingIntro = false;
@@ -281,8 +297,38 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
   // ── V3 intro animation state ─────────────────────────────────────────
   const heroLogoRef = useRef<HTMLDivElement | null>(null);
   const mobileHeroLogoRef = useRef<HTMLDivElement | null>(null);
-  const [showIntro, setShowIntro] = useState(() => !hasPlayedLandingIntro);
-  const [introRevealing, setIntroRevealing] = useState(false); // page fading in
+  const [showIntro, setShowIntro] = useState(false);
+  const [introRevealing, setIntroRevealing] = useState(true);
+
+  // Check intro eligibility once on client mount to eliminate refresh glitches
+  useEffect(() => {
+    const alreadySeen = checkIntroSeen();
+    if (!alreadySeen && !hasPlayedLandingIntro) {
+      hasPlayedLandingIntro = true;
+      try {
+        sessionStorage.setItem(INTRO_SESSION_KEY, "true");
+      } catch {}
+      setShowIntro(true);
+      setIntroRevealing(false);
+    } else {
+      hasPlayedLandingIntro = true;
+      setShowIntro(false);
+      setIntroRevealing(true);
+    }
+  }, []);
+
+  const handleIntroReveal = useCallback(() => {
+    setIntroRevealing(true);
+  }, []);
+
+  const handleIntroComplete = useCallback(() => {
+    hasPlayedLandingIntro = true;
+    try {
+      sessionStorage.setItem(INTRO_SESSION_KEY, "true");
+    } catch {}
+    setShowIntro(false);
+    setIntroRevealing(true);
+  }, []);
 
   const [activeSession, setActiveSession] = useState<UserSession | null>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -1131,8 +1177,8 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
         <PageIntroAnimation
           heroLogoRef={heroLogoRef}
           mobileHeroLogoRef={mobileHeroLogoRef}
-          onStartReveal={() => setIntroRevealing(true)}
-          onComplete={() => setShowIntro(false)}
+          onStartReveal={handleIntroReveal}
+          onComplete={handleIntroComplete}
         />
       )}
 

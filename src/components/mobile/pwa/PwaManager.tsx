@@ -117,8 +117,38 @@ export function PwaManager() {
       >
         <div className="space-y-4 py-2 text-left">
           <div className="p-4 rounded-2xl bg-neutral-50 dark:bg-slate-800 border border-neutral-200/80 dark:border-slate-700 flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-[#0B2A6F] flex items-center justify-center text-white font-bold text-xl shrink-0 shadow-sm">
-              P
+            <div className="w-12 h-12 rounded-xl bg-[#0B2A6F] flex items-center justify-center p-2 text-white shrink-0 shadow-sm">
+              <svg
+                viewBox="0 0 1930 1930"
+                role="img"
+                aria-label="projects.kit logo"
+                className="w-full h-full object-contain pointer-events-none"
+              >
+                <defs>
+                  <mask id="cut-pwa-sheet-icon" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+                    <rect width="1930" height="1930" fill="#fff" />
+                    <g fill="none" stroke="#000" strokeWidth="105">
+                      <line x1="928" y1="585" x2="770" y2="1135" />
+                      <line x1="928" y1="585" x2="1345" y2="1005" />
+                      <line x1="770" y1="1135" x2="1345" y2="1005" />
+                      <line x1="770" y1="1135" x2="587" y2="1732" />
+                    </g>
+                    <g fill="#000">
+                      <circle cx="928" cy="585" r="165" />
+                      <circle cx="1345" cy="1005" r="165" />
+                      <circle cx="770" cy="1135" r="165" />
+                    </g>
+                  </mask>
+                </defs>
+                <polygon
+                  points="965,413.5 1516.5,965 965,1516.5 413.5,965"
+                  fill="#FFFFFF"
+                  stroke="#FFFFFF"
+                  strokeWidth="600"
+                  strokeLinejoin="round"
+                  mask="url(#cut-pwa-sheet-icon)"
+                />
+              </svg>
             </div>
             <div>
               <h4 className="text-sm font-bold text-slate-900 dark:text-white">

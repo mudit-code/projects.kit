@@ -397,7 +397,7 @@ export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAp
         </div>
 
         {/* Hero Branding with Official projects.kit Geometric Logo (Tap & hold supported) */}
-        <div className="pt-2 sm:pt-4 text-center space-y-3">
+        <div className="pt-2 sm:pt-4 text-center flex flex-col items-center">
           <div
             ref={heroLogoRef}
             onTouchStart={handleLogoPointerDown}
@@ -412,7 +412,7 @@ export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAp
             role="button"
             tabIndex={0}
             aria-label="projects.kit logo (Tap and hold for staff panel)"
-            className={`inline-flex items-center justify-center p-3 rounded-2xl transition-all duration-200 cursor-pointer select-none ${
+            className={`inline-flex items-center justify-center p-1 rounded-2xl transition-all duration-200 cursor-pointer select-none ${
               isHoldingLogo
                 ? "scale-90 ring-4 ring-[#0B2A6F]/30 bg-blue-50/70 dark:bg-blue-950/40 shadow-lg animate-pulse"
                 : "active:scale-95 hover:scale-105"
@@ -453,13 +453,10 @@ export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAp
             </svg>
           </div>
 
-          <div>
+          <div className="-mt-1">
             <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               projects<span className="text-[#0B2A6F] dark:text-blue-400">.kit</span>
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
-              Academic Project Lifecycle & Evaluation Portal
-            </p>
           </div>
         </div>
 
@@ -512,31 +509,11 @@ export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAp
               </>
             )}
           </button>
-
-          {/* Quick test chips */}
-          <div className="pt-2 border-t border-neutral-100 dark:border-slate-800 text-center">
-            <span className="text-[10px] text-slate-400 block mb-1.5">Quick Demo AFNs:</span>
-            <div className="flex justify-center gap-2">
-              {["232451", "232452", "232453"].map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => {
-                    setAfnInput(chip);
-                    handleVerifyAfn(chip);
-                  }}
-                  className="px-2.5 py-1 text-[11px] font-mono font-medium rounded-lg bg-neutral-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-neutral-200 cursor-pointer"
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
         <p className="text-[11px] text-slate-400 text-center pb-2">
-          Kanpur Institute of Technology • Academic Project Lifecycle
+          Kanpur Institute of Technology
         </p>
       </div>
     );
@@ -809,7 +786,7 @@ export function StudentMobileApp({ onAdminAccess, heroLogoRef }: StudentMobileAp
                 />
               </button>
               <p className="text-[11px] text-slate-400">
-                Kanpur Institute of Technology • Academic Project Lifecycle
+                Kanpur Institute of Technology
               </p>
             </div>
           </div>

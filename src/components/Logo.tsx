@@ -34,7 +34,7 @@ export function Logo({
   const textClass = textSizes[size] || textSizes.md;
 
   const content = (
-    <div className={`flex items-center group transition-all select-none ${collapsed ? "justify-center" : "gap-2.5"} ${className}`}>
+    <div className={`flex items-center group transition-all select-none ${collapsed ? "justify-center" : "gap-1.5"} ${className}`}>
       {collapsed ? (
         <div className={`relative ${iconClass} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shrink-0`} title="projects.kit">
           <svg
@@ -71,7 +71,7 @@ export function Logo({
           </svg>
         </div>
       ) : (
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <div className={`relative ${iconClass} flex items-center shrink-0 group-hover:scale-105 transition-transform`}>
             <svg
               viewBox="0 0 1930 1930"

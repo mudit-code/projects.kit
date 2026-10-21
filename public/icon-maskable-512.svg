@@ -2,8 +2,31 @@
   <!-- Full-bleed brand blue background for maskable container -->
   <rect width="512" height="512" fill="#0B2A6F"/>
   
-  <!-- Centered White 'P' within the maskable safe zone (r=204px) -->
-  <g fill="#FFFFFF" transform="translate(146, 116)">
-    <path d="M 0 0 L 120 0 C 180 0 220 35 220 95 C 220 155 180 190 120 190 L 58 190 L 58 280 L 0 280 Z M 58 52 L 58 138 L 115 138 C 145 138 162 122 162 95 C 162 68 145 52 115 52 Z"/>
+  <!-- Centered projects.kit Geometric Logo in White within maskable safe zone -->
+  <g transform="translate(96, 96) scale(0.1658)">
+    <defs>
+      <mask id="cut-icon-maskable" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+        <rect width="1930" height="1930" fill="#fff" />
+        <g fill="none" stroke="#000" stroke-width="105">
+          <line x1="928" y1="585" x2="770" y2="1135" />
+          <line x1="928" y1="585" x2="1345" y2="1005" />
+          <line x1="770" y1="1135" x2="1345" y2="1005" />
+          <line x1="770" y1="1135" x2="587" y2="1732" />
+        </g>
+        <g fill="#000">
+          <circle cx="928" cy="585" r="165" />
+          <circle cx="1345" cy="1005" r="165" />
+          <circle cx="770" cy="1135" r="165" />
+        </g>
+      </mask>
+    </defs>
+    <polygon
+      points="965,413.5 1516.5,965 965,1516.5 413.5,965"
+      fill="#FFFFFF"
+      stroke="#FFFFFF"
+      stroke-width="600"
+      stroke-linejoin="round"
+      mask="url(#cut-icon-maskable)"
+    />
   </g>
 </svg>

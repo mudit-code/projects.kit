@@ -45,6 +45,22 @@ export function PageIntroAnimation({
   const flyingLogoRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>('playing');
 
+  // Stable refs for callbacks and element refs to avoid re-triggering timers on re-render
+  const onStartRevealRef = useRef(onStartReveal);
+  const onCompleteRef    = useRef(onComplete);
+  const heroLogoRefCurrent = useRef(heroLogoRef);
+  const mobileHeroLogoRefCurrent = useRef(mobileHeroLogoRef);
+
+  useEffect(() => {
+    onStartRevealRef.current = onStartReveal;
+    onCompleteRef.current    = onComplete;
+    heroLogoRefCurrent.current = heroLogoRef;
+    mobileHeroLogoRefCurrent.current = mobileHeroLogoRef;
+  });
+
+  const hasStartedRef  = useRef(false);
+  const hasFinishedRef = useRef(false);
+
   // prep() — mirrors the exact JS from projects.kit intro.html
   const prep = useCallback((stageElem: HTMLElement) => {
     const p = stageElem.querySelector('.pki-pp') as HTMLElement | null;
@@ -72,13 +88,44 @@ export function PageIntroAnimation({
     stageElem.style.setProperty('--s',  String(sc));
   }, []);
 
+  // Finish immediately (used for skips, escapes, or failsafes)
+  const finishImmediately = useCallback(() => {
+    if (hasFinishedRef.current) return;
+    hasFinishedRef.current = true;
+
+    const overlay = overlayRef.current;
+    if (overlay) {
+      overlay.style.transition = 'opacity 200ms ease';
+      overlay.style.opacity    = '0';
+      overlay.style.pointerEvents = 'none';
+    }
+
+    onStartRevealRef.current();
+    setTimeout(() => {
+      setPhase('done');
+      onCompleteRef.current();
+    }, 220);
+  }, []);
+
   // FLIP transition: fly logo from centre → hero position (supports PC and Mobile)
   const startFlyTransition = useCallback(() => {
+    if (hasFinishedRef.current) return;
+
     const logoEl   = logoRef.current;
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-    const activeHeroContainer = (isMobile && mobileHeroLogoRef?.current)
-      ? mobileHeroLogoRef.current
-      : (heroLogoRef.current || mobileHeroLogoRef?.current);
+
+    // Pick active hero container and fallback if width/height is 0 (hidden responsive container)
+    let activeHeroContainer = (isMobile && mobileHeroLogoRefCurrent.current?.current)
+      ? mobileHeroLogoRefCurrent.current.current
+      : (heroLogoRefCurrent.current?.current || mobileHeroLogoRefCurrent.current?.current);
+
+    if (activeHeroContainer && (activeHeroContainer.offsetWidth === 0 || activeHeroContainer.offsetHeight === 0)) {
+      const alt = isMobile ? heroLogoRefCurrent.current?.current : mobileHeroLogoRefCurrent.current?.current;
+      if (alt && alt.offsetWidth > 0 && alt.offsetHeight > 0) {
+        activeHeroContainer = alt;
+      }
+    }
+
     const flyingEl = flyingLogoRef.current;
     const overlay  = overlayRef.current;
 
@@ -92,25 +139,33 @@ export function PageIntroAnimation({
         overlay.style.opacity    = '0';
         overlay.style.pointerEvents = 'none';
       }
-      setTimeout(onStartReveal, REVEAL_DELAY_MS);
+      setTimeout(() => onStartRevealRef.current(), REVEAL_DELAY_MS);
       setPhase('flying');
-      setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 40);
+      setTimeout(() => {
+        hasFinishedRef.current = true;
+        setPhase('done');
+        onCompleteRef.current();
+      }, FLY_DURATION_MS + 40);
       return;
     }
 
     const from = sourceSvg.getBoundingClientRect();
     const to   = targetSvg.getBoundingClientRect();
 
-    // Guard against 0-dimension target (e.g. collapsed)
+    // Guard against 0-dimension target (e.g. collapsed or not yet painted)
     if (to.width === 0 || to.height === 0) {
       if (overlay) {
         overlay.style.transition = `opacity ${FLY_DURATION_MS}ms ease`;
         overlay.style.opacity    = '0';
         overlay.style.pointerEvents = 'none';
       }
-      setTimeout(onStartReveal, REVEAL_DELAY_MS);
+      setTimeout(() => onStartRevealRef.current(), REVEAL_DELAY_MS);
       setPhase('flying');
-      setTimeout(() => { setPhase('done'); onComplete(); }, FLY_DURATION_MS + 40);
+      setTimeout(() => {
+        hasFinishedRef.current = true;
+        setPhase('done');
+        onCompleteRef.current();
+      }, FLY_DURATION_MS + 40);
       return;
     }
 
@@ -158,26 +213,31 @@ export function PageIntroAnimation({
     overlay.style.pointerEvents = 'none';
 
     // Reveal page content around the landing logo
-    setTimeout(onStartReveal, REVEAL_DELAY_MS);
+    setTimeout(() => onStartRevealRef.current(), REVEAL_DELAY_MS);
     setPhase('flying');
 
     // Settle cleanly into the page
     setTimeout(() => {
+      hasFinishedRef.current = true;
       setPhase('done');
-      onComplete();
+      onCompleteRef.current();
     }, FLY_DURATION_MS + 40);
-  }, [heroLogoRef, mobileHeroLogoRef, onComplete, onStartReveal]);
+  }, []);
 
   // Start animation once mounted
   useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+
     const s = stageRef.current;
-    if (!s) return;
-    s.className = 'pki-stage pki-hold';
+    if (s) {
+      s.className = 'pki-stage pki-hold';
+    }
 
     let flyTimer: ReturnType<typeof setTimeout>;
 
     const startAnimation = () => {
-      if (!stageRef.current) return;
+      if (!stageRef.current || hasFinishedRef.current) return;
       prep(stageRef.current);
       stageRef.current.classList.remove('pki-hold');
       flyTimer = setTimeout(startFlyTransition, LOGO_CONSTRUCT_MS);
@@ -185,17 +245,28 @@ export function PageIntroAnimation({
 
     // Safety watchdog: guarantees page content reveals even if fonts/timers ever stutter
     const watchdogTimer = setTimeout(() => {
-      onStartReveal();
-      setTimeout(() => {
-        setPhase('done');
-        onComplete();
-      }, 350);
-    }, LOGO_CONSTRUCT_MS + FLY_DURATION_MS + 600);
+      if (!hasFinishedRef.current) {
+        onStartRevealRef.current();
+        setTimeout(() => {
+          hasFinishedRef.current = true;
+          setPhase('done');
+          onCompleteRef.current();
+        }, 350);
+      }
+    }, LOGO_CONSTRUCT_MS + FLY_DURATION_MS + 500);
+
+    // Escape key listener to skip intro
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        finishImmediately();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
 
     if (typeof document !== 'undefined' && document.fonts?.ready) {
       Promise.race([
         document.fonts.ready,
-        new Promise<void>((res) => setTimeout(res, 400)),
+        new Promise<void>((res) => setTimeout(res, 350)),
       ]).then(startAnimation);
     } else {
       startAnimation();
@@ -204,8 +275,9 @@ export function PageIntroAnimation({
     return () => {
       clearTimeout(flyTimer);
       clearTimeout(watchdogTimer);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [prep, startFlyTransition, onStartReveal, onComplete]);
+  }, [prep, startFlyTransition, finishImmediately]);
 
   if (phase === 'done') return null;
 
@@ -314,8 +386,24 @@ export function PageIntroAnimation({
         }
       `}</style>
 
-      {/* Full-screen overlay */}
-      <div ref={overlayRef} className="pki-overlay" aria-hidden="true">
+      {/* Full-screen overlay (tap or click to skip directly to page) */}
+      <div
+        ref={overlayRef}
+        className="pki-overlay cursor-pointer select-none"
+        onClick={finishImmediately}
+        aria-hidden="true"
+        title="Tap or click to enter"
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            finishImmediately();
+          }}
+          className="absolute top-4 right-4 sm:top-6 sm:right-6 px-3 py-1 rounded-full bg-slate-200/60 hover:bg-slate-300/80 active:scale-95 text-[#0B2A6F] text-[11px] font-semibold tracking-wide uppercase transition-all z-10 cursor-pointer"
+        >
+          Skip
+        </button>
         <div ref={stageRef} className="pki-stage pki-hold">
           {/* Wordmark */}
           <div className="pki-wm" aria-hidden="true">
