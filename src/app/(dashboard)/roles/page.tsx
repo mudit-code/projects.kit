@@ -187,7 +187,7 @@ export default function RolesPage() {
           <button
             type="button"
             onClick={() => setActiveView("students")}
-            className="group p-6 bg-[#F6F5F2] border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:border-[#0D3481]/30 transition-all cursor-pointer text-left"
+            className="group p-6 bg-white border border-slate-200 rounded-2xl shadow-xs hover:shadow-md hover:border-[#0D3481]/30 transition-all cursor-pointer text-left"
           >
             <div className="flex items-start justify-between mb-4">
               <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#0D3481] flex items-center justify-center border border-blue-100 group-hover:bg-[#0D3481]/10 transition-colors">
@@ -215,7 +215,7 @@ export default function RolesPage() {
           <button
             type="button"
             onClick={() => setActiveView("faculties")}
-            className="group p-6 bg-[#F6F5F2] border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer text-left"
+            className="group p-6 bg-white border border-slate-200 rounded-2xl shadow-xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer text-left"
           >
             <div className="flex items-start justify-between mb-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 group-hover:bg-emerald-100 transition-colors">
