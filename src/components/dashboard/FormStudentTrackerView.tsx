@@ -446,7 +446,7 @@ export function FormStudentTrackerView({
       setIsRefreshing((prev) => !prev);
       setSelectedSubmission(null);
       setWarningDialog(null);
-      showToast("All submissions reset. All cohort students are now Pending.");
+      showToast("All submissions reset. All students are now Pending.");
     } catch {
       setWarningDialog(null);
     }
@@ -1194,7 +1194,7 @@ export function FormStudentTrackerView({
                 <span class="val">${form.coordinator?.name || form.publishedBy || "Rahul Singh (HOD)"}</span>
               </div>
               <div class="summary-item">
-                <span class="label">Eligible Cohort</span>
+                <span class="label">Eligible Students</span>
                 <span class="val">${totalCount} Students</span>
               </div>
               <div class="summary-item">
@@ -1464,7 +1464,7 @@ export function FormStudentTrackerView({
       (s) => !studentsWithStatus.find((st) => st.afn === s.afn)?.isSubmitted
     );
     setRemindTargetStudents(pendingCohort);
-    showToast(`Reset recipient list to ${pendingCohort.length} pending cohort students.`);
+    showToast(`Reset recipient list to ${pendingCohort.length} pending students.`);
   };
 
   // Copy recipient emails from within the modal
@@ -1552,7 +1552,7 @@ export function FormStudentTrackerView({
         );
       } else if (data.skipped > 0) {
         showToast(
-          data.message || "All targeted cohort students received a reminder within the last 24 hours.",
+          data.message || "All targeted students received a reminder within the last 24 hours.",
           "info"
         );
       } else {
@@ -1815,41 +1815,113 @@ export function FormStudentTrackerView({
 
       {/* ─── 4 MINIMALIST METRIC CARDS (LAYOUT 1) ─── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-            Eligible Cohort
-          </span>
+        {/* 1. Eligible Students -> ALL */}
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("ALL");
+            setCurrentPage(1);
+          }}
+          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none relative group hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] focus:outline-hidden ${
+            statusFilter === "ALL"
+              ? "bg-[#0B2545]/[0.03] border-[#0B2545] ring-2 ring-[#0B2545]/20 shadow-xs"
+              : "bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs"
+          }`}
+          title="Show all eligible students"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+              Eligible Students
+            </span>
+            {statusFilter === "ALL" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[#0B2545]" />
+            )}
+          </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-[#10334A] block mt-1">
             {totalCount}
           </span>
-        </div>
+        </button>
 
-        <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
-            Registered
-          </span>
+        {/* 2. Registered -> REGISTERED */}
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("REGISTERED");
+            setCurrentPage(1);
+          }}
+          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none relative group hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] focus:outline-hidden ${
+            statusFilter === "REGISTERED"
+              ? "bg-emerald-50/50 border-emerald-600 ring-2 ring-emerald-500/25 shadow-xs"
+              : "bg-white border-slate-200/90 hover:border-emerald-200 hover:bg-emerald-50/10 shadow-2xs"
+          }`}
+          title="Show registered students"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
+              Registered
+            </span>
+            {statusFilter === "REGISTERED" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+            )}
+          </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-emerald-800 block mt-1">
             {registeredCount}
           </span>
-        </div>
+        </button>
 
-        <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 block">
-            Needs Review
-          </span>
+        {/* 3. Needs Review -> NOT_APPROVED */}
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("NOT_APPROVED");
+            setCurrentPage(1);
+          }}
+          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none relative group hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] focus:outline-hidden ${
+            statusFilter === "NOT_APPROVED"
+              ? "bg-blue-50/50 border-blue-600 ring-2 ring-blue-500/25 shadow-xs"
+              : "bg-white border-slate-200/90 hover:border-blue-200 hover:bg-blue-50/10 shadow-2xs"
+          }`}
+          title="Show registrations needing review"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 block">
+              Needs Review
+            </span>
+            {statusFilter === "NOT_APPROVED" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+            )}
+          </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-blue-800 block mt-1">
             {needsReviewCount}
           </span>
-        </div>
+        </button>
 
-        <div className="p-4 sm:p-5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 block">
-            Pending
-          </span>
+        {/* 4. Pending -> PENDING */}
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("PENDING");
+            setCurrentPage(1);
+          }}
+          className={`p-4 sm:p-5 rounded-2xl border text-left transition-all cursor-pointer select-none relative group hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] focus:outline-hidden ${
+            statusFilter === "PENDING"
+              ? "bg-amber-50/50 border-amber-600 ring-2 ring-amber-500/25 shadow-xs"
+              : "bg-white border-slate-200/90 hover:border-amber-200 hover:bg-amber-50/10 shadow-2xs"
+          }`}
+          title="Show pending students"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 block">
+              Pending
+            </span>
+            {statusFilter === "PENDING" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+            )}
+          </div>
           <span className="text-2xl sm:text-3xl font-extrabold text-amber-800 block mt-1">
             {pendingCount}
           </span>
-        </div>
+        </button>
       </div>
 
       {/* ─── CONTROLS: FILTER TABS + SEARCH (LAYOUT 1) ─── */}
@@ -2537,8 +2609,9 @@ export function FormStudentTrackerView({
                 onChange={(val) => setNewDeadlineDate(val)}
                 minDate={getTodayIso()}
                 ruleBadge="Rule: Today or future"
+                popoverPlacement="bottom"
                 presets={[
-                  { label: "+7 Days", daysFromBase: 7 },
+                  { label: "+10 Days", daysFromBase: 10 },
                   { label: "+15 Days", daysFromBase: 15 },
                   { label: "+30 Days", daysFromBase: 30 },
                 ]}
@@ -2746,7 +2819,7 @@ export function FormStudentTrackerView({
                       <button
                         type="button"
                         onClick={handleResetRecipientsToDefault}
-                        title="Restore default pending cohort (60 students)"
+                        title="Restore default pending list (60 students)"
                         className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[11px] transition-all shadow-2xs cursor-pointer flex items-center gap-1"
                       >
                         <RotateCcw className="w-3 h-3 text-[#0D3481]" />
@@ -2787,7 +2860,7 @@ export function FormStudentTrackerView({
                   <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 font-medium">
                     <span>
                       {remindTargetStudents.length} total recipient{remindTargetStudents.length !== 1 ? "s" : ""}{" "}
-                      ({remindTargetStudents.filter((s) => !String(s.id).startsWith("custom-")).length} cohort pending,{" "}
+                      ({remindTargetStudents.filter((s) => !String(s.id).startsWith("custom-")).length} pending,{" "}
                       {remindTargetStudents.filter((s) => String(s.id).startsWith("custom-")).length} custom added)
                     </span>
                     {recipientSearch && (
@@ -2863,7 +2936,7 @@ export function FormStudentTrackerView({
                         <Users className="w-8 h-8 text-slate-300 mx-auto" />
                         <p className="text-xs font-semibold text-slate-600">No recipients in list.</p>
                         <p className="text-[11px] text-slate-400">
-                          Add a test email above or click &quot;Reset (60)&quot; to restore all pending cohort students.
+                          Add a test email above or click &quot;Reset (60)&quot; to restore all pending students.
                         </p>
                       </div>
                     )}

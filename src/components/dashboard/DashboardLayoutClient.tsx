@@ -377,13 +377,6 @@ export function DashboardLayoutClient({
                 <NavLink 
                   isSidebarOpen={isSidebarOpen} 
                   setIsMobileMenuOpen={setIsMobileMenuOpen} 
-                  href="/hod/students" 
-                  icon={Users} 
-                  label="students" 
-                />
-                <NavLink 
-                  isSidebarOpen={isSidebarOpen} 
-                  setIsMobileMenuOpen={setIsMobileMenuOpen} 
                   href="/hod/projects" 
                   icon={FolderGit2} 
                   label="project dir" 

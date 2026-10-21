@@ -1,502 +1,538 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import StudentsTable from "@/components/dashboard/StudentsTable";
 import {
-  ShieldCheck,
-  UserCog,
   Users,
-  Lock,
+  UserCog,
+  GraduationCap,
+  BookOpen,
+  ChevronRight,
+  ArrowLeft,
   CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  ArrowRight,
-  RefreshCw,
-  Plus,
-  Search,
-  Filter,
-  Eye,
-  SlidersHorizontal,
-  KeyRound,
-  FileCheck2,
-  FolderGit2
+  Send,
+  X,
+  Mail,
+  Phone,
+  Building2,
+  FolderGit2,
 } from "lucide-react";
-import { getActiveSession, saveActiveSession, ROLE_DATA, RoleType, ROLE_PERMISSIONS } from "@/lib/auth";
+import {
+  getTodayIso,
+  formatDisplayDate,
+  formatToIsoDate,
+} from "@/components/CustomDatePicker";
 
-interface FacultyMember {
+// ─── Sample Faculty Data ───
+interface Faculty {
   id: string;
   name: string;
   email: string;
+  phone: string;
   designation: string;
-  assignedRole: RoleType;
-  cohort: string;
-  assignedSections: string[];
-  status: "Active" | "Pending Review";
-  canEvaluate: boolean;
-  canReviewSubmissions: boolean;
+  department: string;
+  avatar: string;
 }
 
-const INITIAL_FACULTY: FacultyMember[] = [
+const AVAILABLE_FACULTIES: Faculty[] = [
   {
     id: "fac-1",
-    name: "Dr. A. Sharma",
-    email: "coordinator@kit.ac.in",
+    name: "Dr. Anita Sharma",
+    email: "anita.sharma@kit.ac.in",
+    phone: "+91 94567 12340",
     designation: "Associate Professor",
-    assignedRole: "COORDINATOR",
-    cohort: "B.Tech CSE · 4th Year",
-    assignedSections: ["A", "B"],
-    status: "Active",
-    canEvaluate: true,
-    canReviewSubmissions: true,
+    department: "Computer Science & Engineering",
+    avatar: "AS",
   },
   {
     id: "fac-2",
-    name: "Prof. R. K. Verma",
+    name: "Prof. Rajesh Kumar Verma",
     email: "rk.verma@kit.ac.in",
+    phone: "+91 98123 45670",
     designation: "Assistant Professor",
-    assignedRole: "COORDINATOR",
-    cohort: "B.Tech CSE (AI & ML) · 4th Year",
-    assignedSections: ["C"],
-    status: "Active",
-    canEvaluate: true,
-    canReviewSubmissions: true,
+    department: "Computer Science & Engineering",
+    avatar: "RV",
   },
   {
     id: "fac-3",
-    name: "Dr. Neha Gupta",
-    email: "neha.gupta@kit.ac.in",
+    name: "Dr. Priya Patel",
+    email: "priya.patel@kit.ac.in",
+    phone: "+91 87654 32100",
     designation: "Professor",
-    assignedRole: "COORDINATOR",
-    cohort: "B.Tech IT · 3rd Year",
-    assignedSections: ["A"],
-    status: "Active",
-    canEvaluate: true,
-    canReviewSubmissions: true,
-  },
-  {
-    id: "fac-4",
-    name: "Er. Manish Patel",
-    email: "m.patel@kit.ac.in",
-    designation: "Assistant Professor",
-    assignedRole: "COORDINATOR",
-    cohort: "B.Tech CSE · 3rd Year",
-    assignedSections: ["B", "D"],
-    status: "Active",
-    canEvaluate: false,
-    canReviewSubmissions: true,
+    department: "Information Technology",
+    avatar: "PP",
   },
 ];
 
-const ROUTE_SECURITY_MATRIX = [
-  {
-    path: "/",
-    label: "Dashboard Home",
-    description: "Welcome banner, batch analytics, quick links",
-    hodAccess: "Full Department Admin",
-    coordAccess: "Assigned Project View",
-    hodAllowed: true,
-    coordAllowed: true,
-  },
-  {
-    path: "/forms",
-    label: "Departmental Forms",
-    description: "Capstone & mini-project lifecycle forms registry",
-    hodAccess: "Publish & Oversee",
-    coordAccess: "Review & Evaluate",
-    hodAllowed: true,
-    coordAllowed: true,
-  },
-  {
-    path: "/students",
-    label: "Student Directory",
-    description: "348 enrolled student roster and academic records",
-    hodAccess: "Full Enrolled Directory",
-    coordAccess: "Assigned Cohort Roster",
-    hodAllowed: true,
-    coordAllowed: true,
-  },
-  {
-    path: "/projects",
-    label: "Project Directory",
-    description: "Capstone archive, synopsis, and dossiers",
-    hodAccess: "Department-wide Archive",
-    coordAccess: "Assigned Evaluations",
-    hodAllowed: true,
-    coordAllowed: true,
-  },
-  {
-    path: "/projects/new",
-    label: "Start / Publish Project",
-    description: "Initiate semester-wise academic & non-academic workflows",
-    hodAccess: "Authorized (HOD Exclusive)",
-    coordAccess: "Restricted (403 Forbidden)",
-    hodAllowed: true,
-    coordAllowed: false,
-  },
-  {
-    path: "/roles",
-    label: "Manage Roles & Governance",
-    description: "Role assignments, RBAC policies, and faculty permissions",
-    hodAccess: "Authorized (HOD Exclusive)",
-    coordAccess: "Restricted (403 Forbidden)",
-    hodAllowed: true,
-    coordAllowed: false,
-  },
-];
+const COURSES = ["B.Tech", "MCA", "M.Tech"];
+const YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SECTIONS = ["All", "A", "B", "C", "D"];
+
+interface AssignedTask {
+  id: string;
+  facultyId: string;
+  facultyName: string;
+  course: string;
+  year: string;
+  section: string;
+  subject: string;
+  subjectCode: string;
+  assignedAt: string;
+  status: "Active" | "Pending";
+}
 
 export default function RolesPage() {
-  const [session, setSession] = useState(() => getActiveSession());
-  const [facultyList, setFacultyList] = useState<FacultyMember[]>(INITIAL_FACULTY);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"matrix" | "roster">("matrix");
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"home" | "students" | "faculties">("home");
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Faculty assign form state
+  const [assignCourse, setAssignCourse] = useState("B.Tech");
+  const [assignYear, setAssignYear] = useState("4th Year");
+  const [assignSection, setAssignSection] = useState("A");
+  const [assignSubject, setAssignSubject] = useState("Mini Project");
+  const [assignSubjectCode, setAssignSubjectCode] = useState("");
+  const [selectedFacultyId, setSelectedFacultyId] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [assignedTasks, setAssignedTasks] = useState<AssignedTask[]>([]);
+
+  // Load saved assignments
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("kit_faculty_assignments");
+      if (saved) setAssignedTasks(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
   };
 
-  const handleSimulateCoordinator = () => {
-    const coordData = ROLE_DATA.COORDINATOR;
-    saveActiveSession({
-      role: "COORDINATOR",
-      email: coordData.email,
-      name: coordData.name,
-      dept: coordData.dept,
-    });
-    window.location.href = "/";
+  const handleAssignTask = () => {
+    if (!assignSubjectCode.trim()) {
+      showToast("Please enter the subject code.");
+      return;
+    }
+    if (!selectedFacultyId) {
+      showToast("Please select a faculty member.");
+      return;
+    }
+
+    setIsAssigning(true);
+    const faculty = AVAILABLE_FACULTIES.find((f) => f.id === selectedFacultyId);
+    if (!faculty) return;
+
+    const newTask: AssignedTask = {
+      id: `TASK-${Date.now().toString().slice(-6)}`,
+      facultyId: faculty.id,
+      facultyName: faculty.name,
+      course: assignCourse,
+      year: assignYear,
+      section: assignSection,
+      subject: assignSubject,
+      subjectCode: assignSubjectCode.trim().toUpperCase(),
+      assignedAt: new Date().toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+      status: "Active",
+    };
+
+    const updated = [...assignedTasks, newTask];
+    setAssignedTasks(updated);
+    localStorage.setItem("kit_faculty_assignments", JSON.stringify(updated));
+
+    // Reset form
+    setAssignSubjectCode("");
+    setSelectedFacultyId("");
+    setAssignSubject("Mini Project");
+
+    setTimeout(() => {
+      setIsAssigning(false);
+      showToast(`Project assigned to ${faculty.name} successfully!`);
+    }, 600);
   };
 
-  const toggleEvaluationPermission = (id: string) => {
-    setFacultyList((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, canEvaluate: !f.canEvaluate } : f
-      )
+  // ─── HOME VIEW: Two Cards ───
+  if (activeView === "home") {
+    return (
+      <div className="w-full space-y-6">
+        {/* Toast */}
+        {toastMsg && (
+          <div className="fixed bottom-6 right-6 z-50 p-4 bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>{toastMsg}</span>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#0D3481]/10 text-[#0D3481] flex items-center justify-center shrink-0">
+              <UserCog className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Manage Roles</h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage student directory and assign projects to faculty coordinators.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Two Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Students Card */}
+          <button
+            type="button"
+            onClick={() => setActiveView("students")}
+            className="group p-6 bg-[#F6F5F2] border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:border-[#0D3481]/30 transition-all cursor-pointer text-left"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#0D3481] flex items-center justify-center border border-blue-100 group-hover:bg-[#0D3481]/10 transition-colors">
+                <GraduationCap className="w-7 h-7" />
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#0D3481] group-hover:translate-x-1 transition-all" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 group-hover:text-[#0D3481] transition-colors">
+              Students
+            </h2>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              View the complete enrolled students directory — filter by course, branch, year, section, and session.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-[#0D3481] border border-blue-200">
+                Student Directory
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                B.Tech 2023-27
+              </span>
+            </div>
+          </button>
+
+          {/* Faculties Card */}
+          <button
+            type="button"
+            onClick={() => setActiveView("faculties")}
+            className="group p-6 bg-[#F6F5F2] border border-slate-200/80 rounded-2xl shadow-xs hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer text-left"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 group-hover:bg-emerald-100 transition-colors">
+                <Users className="w-7 h-7" />
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">
+              Faculties
+            </h2>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Assign subject projects to faculty coordinators. They'll receive it in their dashboard and manage the full lifecycle.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {AVAILABLE_FACULTIES.length} Faculty Available
+              </span>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                {assignedTasks.length} Assigned
+              </span>
+            </div>
+          </button>
+        </div>
+
+        {/* Assigned Tasks Summary */}
+        {assignedTasks.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Recent Faculty Assignments</h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {assignedTasks.slice(-5).reverse().map((task) => (
+                <div key={task.id} className="p-4 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-[10px] font-bold border border-emerald-200">
+                      {task.facultyName.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-800">{task.facultyName}</span>
+                      <span className="text-slate-400 ml-2">{task.subjectCode} · {task.subject}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400">{task.course} {task.year} Sec {task.section}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {task.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     );
-    showToast("Faculty evaluation privilege updated successfully.");
-  };
+  }
 
-  const filteredFaculty = facultyList.filter(
-    (f) =>
-      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.cohort.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // ─── STUDENTS VIEW ───
+  if (activeView === "students") {
+    return (
+      <div className="w-full space-y-4">
+        {/* Header with Back */}
+        <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setActiveView("home")}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#0D3481] transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
+          <div className="w-px h-8 bg-slate-200" />
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Students Directory</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Final year students directory · B.Tech 2023-27 batch (HOD Departmental Oversight)
+            </p>
+          </div>
+        </div>
 
+        <StudentsTable />
+      </div>
+    );
+  }
+
+  // ─── FACULTIES VIEW: Assign Task System ───
   return (
-    <div className="w-full space-y-6">
-      {/* Toast Alert */}
-      {toastMessage && (
+    <div className="w-full space-y-5">
+      {/* Toast */}
+      {toastMsg && (
         <div className="fixed bottom-6 right-6 z-50 p-4 bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
+          <span>{toastMsg}</span>
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="p-6 md:p-8 bg-[#F6F5F2] border border-slate-200/90 rounded-3xl shadow-xs relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-100/30 rounded-full blur-3xl pointer-events-none -translate-y-20 translate-x-20" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-white text-[#0D3481] border border-slate-200/80 shadow-2xs">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Campus RBAC Security &bull; Separation of Duties</span>
+      {/* Header with Back */}
+      <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setActiveView("home")}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#0D3481] transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
+          <div className="w-px h-8 bg-slate-200" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
+              <FolderGit2 className="w-6 h-6" />
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-[#10334A] flex items-center gap-3">
-              <UserCog className="w-7 h-7 text-[#0D3481]" />
-              Role Management &amp; Route Security
-            </h1>
-            <p className="text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
-              Configure access policies for Kanpur Institute of Technology. Enforce strict route authorization between the <strong className="text-[#0D3481]">Head of Department (HOD)</strong> and <strong className="text-[#0D3481]">Faculty Coordinators</strong>.
-            </p>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Assign Project to Faculty</h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Select course details and assign a subject project to a faculty coordinator. They'll manage the complete lifecycle from their dashboard.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* ─── Left: Assign Form ─── */}
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-xs p-6 space-y-5">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-[#0D3481]" />
+            Project Details
+          </h2>
+
+          {/* Course & Year */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">Course</label>
+              <select
+                value={assignCourse}
+                onChange={(e) => setAssignCourse(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+              >
+                {COURSES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">Year</label>
+              <select
+                value={assignYear}
+                onChange={(e) => setAssignYear(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+              >
+                {YEARS.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Quick Simulation / Test Control */}
-          <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          {/* Section & Subject */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">Section</label>
+              <select
+                value={assignSection}
+                onChange={(e) => setAssignSection(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+              >
+                {SECTIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">Subject</label>
+              <input
+                type="text"
+                value={assignSubject}
+                onChange={(e) => setAssignSubject(e.target.value)}
+                placeholder="e.g. Mini Project"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+              />
+            </div>
+          </div>
+
+          {/* Subject Code */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-700 block">
+              Subject Code <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={assignSubjectCode}
+              onChange={(e) => setAssignSubjectCode(e.target.value)}
+              placeholder="e.g. BCS753"
+              className="w-full max-w-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] uppercase"
+            />
+            <p className="text-[11px] text-slate-400">Official course code from university syllabus</p>
+          </div>
+
+          {/* Select Faculty */}
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-700 block">
+              Select Faculty Coordinator <span className="text-red-500">*</span>
+            </label>
+            <div className="space-y-2.5">
+              {AVAILABLE_FACULTIES.map((fac) => {
+                const isSelected = selectedFacultyId === fac.id;
+                return (
+                  <button
+                    key={fac.id}
+                    type="button"
+                    onClick={() => setSelectedFacultyId(fac.id)}
+                    className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer text-left ${
+                      isSelected
+                        ? "border-emerald-400 bg-emerald-50/70 shadow-xs ring-2 ring-emerald-500/20"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border ${
+                          isSelected
+                            ? "bg-emerald-600 text-white border-emerald-700"
+                            : "bg-slate-100 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {fac.avatar}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{fac.name}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{fac.designation} · {fac.department}</div>
+                        <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3 h-3" /> {fac.email}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Phone className="w-3 h-3" /> {fac.phone}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Assign Button */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-[11px] text-slate-400 max-w-sm">
+              After assignment, the faculty coordinator will receive this project on their dashboard and can publish the registration form, manage submissions, and open final deliverables.
+            </p>
             <button
               type="button"
-              onClick={handleSimulateCoordinator}
-              className="px-4 py-3 rounded-2xl bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer group"
-              title="Switch session to test restricted coordinator view"
+              disabled={isAssigning}
+              onClick={handleAssignTask}
+              className="px-6 py-3 rounded-xl bg-[#0D3481] hover:bg-[#0b2b6b] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50 shrink-0"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-[#0D3481] group-hover:rotate-180 transition-transform duration-300" />
-              <span>Test as Coordinator</span>
+              <Send className="w-4 h-4" />
+              <span>{isAssigning ? "Assigning..." : "Assign to Faculty"}</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Overview Stat Badges */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            Department Admin
-          </div>
-          <div className="text-xl font-black text-[#10334A] flex items-center gap-2">
-            <span>Rahul Singh</span>
-          </div>
-          <p className="text-[11px] text-[#0D3481] font-semibold mt-0.5">Head of Department (HOD)</p>
-        </div>
-
-        <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            Active Coordinators
-          </div>
-          <div className="text-xl font-black text-[#10334A]">
-            {facultyList.length} Faculty
-          </div>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Assigned to 4 Cohorts</p>
-        </div>
-
-        <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            Protected Routes
-          </div>
-          <div className="text-xl font-black text-[#10334A]">
-            2 HOD-Only
-          </div>
-          <p className="text-[11px] text-amber-600 font-semibold mt-0.5">/roles &amp; /projects/new</p>
-        </div>
-
-        <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            Enforcement Tier
-          </div>
-          <div className="text-xl font-black text-emerald-600 flex items-center gap-1.5">
-            <KeyRound className="w-5 h-5 text-emerald-600" />
-            <span>Dual-Layer</span>
-          </div>
-          <p className="text-[11px] text-slate-500 font-medium mt-0.5">Server Proxy + Layout Guard</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-6">
-        <button
-          type="button"
-          onClick={() => setActiveTab("matrix")}
-          className={`pb-3 text-xs sm:text-sm font-extrabold cursor-pointer border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === "matrix"
-              ? "border-[#0D3481] text-[#0D3481]"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>Role Security Matrix &amp; Route Permissions</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("roster")}
-          className={`pb-3 text-xs sm:text-sm font-extrabold cursor-pointer border-b-2 transition-all flex items-center gap-2 ${
-            activeTab === "roster"
-              ? "border-[#0D3481] text-[#0D3481]"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Faculty &amp; Coordinator Roster ({facultyList.length})</span>
-        </button>
-      </div>
-
-      {/* TAB 1: ROLE SECURITY MATRIX */}
-      {activeTab === "matrix" && (
+        {/* ─── Right: Available Faculty Summary ─── */}
         <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#10334A]">
-                  Institutional Route Permission Matrix
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Detailed access control breakdown enforced across server-side proxy and client-side route guards.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Full Access
-                </span>
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 font-bold border border-rose-200">
-                  <Lock className="w-3.5 h-3.5" /> Restricted (403)
-                </span>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="py-3 px-4">Route Path</th>
-                    <th className="py-3 px-4">Module Name</th>
-                    <th className="py-3 px-4">HOD Access</th>
-                    <th className="py-3 px-4">Faculty Coordinator Access</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {ROUTE_SECURITY_MATRIX.map((item) => (
-                    <tr key={item.path} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-[#0D3481]">
-                        {item.path}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-slate-800">{item.label}</div>
-                        <div className="text-[11px] text-slate-400 font-normal">{item.description}</div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-[#0D3481] font-bold border border-blue-200/60 text-[11px]">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#0D3481]" />
-                          <span>{item.hodAccess}</span>
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {item.coordAllowed ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200/60 text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>{item.coordAccess}</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 font-bold border border-rose-200/60 text-[11px]">
-                            <Lock className="w-3.5 h-3.5 text-rose-600" />
-                            <span>{item.coordAccess}</span>
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {item.coordAllowed ? (
-                          <span className="text-[11px] font-bold text-slate-600">Dual Role</span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                            HOD Privilege
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5 space-y-4">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Faculty Directory</h3>
+            <div className="space-y-3">
+              {AVAILABLE_FACULTIES.map((fac) => {
+                const taskCount = assignedTasks.filter((t) => t.facultyId === fac.id).length;
+                return (
+                  <div key={fac.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="w-9 h-9 rounded-lg bg-[#0D3481]/10 text-[#0D3481] flex items-center justify-center text-[10px] font-bold shrink-0">
+                      {fac.avatar}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-slate-800 truncate">{fac.name}</div>
+                      <div className="text-[10px] text-slate-400">{fac.designation}</div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shrink-0">
+                      {taskCount} project{taskCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Security Architecture Explanatory Box */}
-          <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#0D3481]" />
-              <span>Multi-Layer Route Security Architecture</span>
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 leading-relaxed">
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
-                <strong className="text-[#10334A] block mb-1">1. Server-Side Proxy (`src/proxy.ts`):</strong>
-                Runs on the Next.js Edge proxy layer before components render. Verifies the institutional session cookie (<code className="text-[#0D3481] bg-blue-50 px-1 py-0.5 rounded">kit_user_session</code>). Redirects unauthenticated visitors to institutional sign-in and rejects coordinator access to administrative endpoints.
-              </div>
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
-                <strong className="text-[#10334A] block mb-1">2. Client-Side Layout Guard (`layout.tsx`):</strong>
-                Continuously checks active local storage and dispatched auth events. If a user navigates to a restricted route client-side, it seamlessly presents the official KIT 403 Access Denied interface without visual glitches or unauthorized data exposure.
+          {/* Assigned Tasks for current view */}
+          {assignedTasks.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-5 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Active Assignments ({assignedTasks.length})
+              </h3>
+              <div className="space-y-2">
+                {assignedTasks.slice(-6).reverse().map((task) => (
+                  <div key={task.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">{task.subjectCode}</span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        {task.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      {task.facultyName} · {task.course} {task.year} Sec {task.section}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          </div>
+          )}
         </div>
-      )}
-
-      {/* TAB 2: FACULTY & COORDINATOR ROSTER */}
-      {activeTab === "roster" && (
-        <div className="space-y-4">
-          <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search faculty by name, email, or cohort..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] transition-all"
-              />
-            </div>
-
-            <div className="text-xs text-slate-500 font-semibold self-center sm:self-auto">
-              Showing <span className="font-bold text-slate-800">{filteredFaculty.length}</span> assigned faculty
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="py-3 px-4">Faculty Member</th>
-                    <th className="py-3 px-4">Designation</th>
-                    <th className="py-3 px-4">Assigned Cohort</th>
-                    <th className="py-3 px-4">Sections</th>
-                    <th className="py-3 px-4">Evaluation Rights</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredFaculty.map((member) => (
-                    <tr key={member.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-slate-800">{member.name}</div>
-                        <div className="text-[11px] text-slate-400 font-medium">{member.email}</div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {member.designation}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-slate-700">
-                        {member.cohort}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="flex gap-1">
-                          {member.assignedSections.map((sec) => (
-                            <span
-                              key={sec}
-                              className="w-5 h-5 rounded-md bg-blue-50 text-[#0D3481] border border-blue-200 text-[10px] font-extrabold flex items-center justify-center"
-                            >
-                              {sec}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <button
-                          type="button"
-                          onClick={() => toggleEvaluationPermission(member.id)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-all ${
-                            member.canEvaluate
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                              : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
-                          }`}
-                        >
-                          {member.canEvaluate ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Evaluator Enabled</span>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="w-3.5 h-3.5 text-slate-400" />
-                              <span>View Only</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => showToast(`Permissions configured for ${member.name}.`)}
-                          className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
-                        >
-                          Configure
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -8,7 +8,7 @@ export default function CoordinatorStudentsPage() {
       <div className="mb-2.5 shrink-0">
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">Assigned Students Roster</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Final year student records assigned to your faculty coordination cohort.
+          Final year student records assigned to your faculty coordination.
         </p>
       </div>
       <StudentsTable />

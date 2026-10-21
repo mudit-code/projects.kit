@@ -37,8 +37,6 @@ import {
   FolderGit2,
   ExternalLink,
   Presentation,
-  Upload,
-  Paperclip,
   UserPlus,
 } from "lucide-react";
 
@@ -1078,11 +1076,34 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
     setIsSubmittingFinal(true);
     try {
+      const cfg = finalTargetForm.finalSubmissionConfig;
+
+      if (cfg?.requireRepoUrl && !finalRepoUrl.trim()) {
+        alert("Git Repository URL is mandatory.");
+        setIsSubmittingFinal(false);
+        return;
+      }
+      if (cfg?.requireReport && !finalReportFileName.trim()) {
+        alert("Project Report is mandatory.");
+        setIsSubmittingFinal(false);
+        return;
+      }
+      if (cfg?.requireSlides && !finalSlidesFileName.trim()) {
+        alert("PPT is mandatory.");
+        setIsSubmittingFinal(false);
+        return;
+      }
+      if (cfg?.requireDemoUrl && !finalDemoUrl.trim()) {
+        alert("Demo URL is mandatory.");
+        setIsSubmittingFinal(false);
+        return;
+      }
+
       const finalPayload = {
         repoUrl: finalRepoUrl.trim(),
         demoUrl: finalDemoUrl.trim(),
-        reportFileName: finalReportFileName.trim() || `${student?.rollNumber || student?.afn || "Project"}_Report_Dossier.pdf`,
-        slidesFileName: finalSlidesFileName.trim() || `${student?.rollNumber || student?.afn || "Project"}_Presentation_Slides.pptx`,
+        reportFileName: finalReportFileName.trim() || (cfg?.requireReport ? `${student?.rollNumber || student?.afn || "Project"}_Report.pdf` : ""),
+        slidesFileName: finalSlidesFileName.trim() || (cfg?.requireSlides ? `${student?.rollNumber || student?.afn || "Project"}_PPT.pptx` : ""),
         remarks: finalRemarks.trim(),
         submittedAt: new Date().toISOString(),
       };
@@ -1836,38 +1857,32 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                       Registration Type{" "}
                       <span className="text-red-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <button
                         type="button"
                         onClick={() => {
                           setRegistrationType("individual");
                           setTeamMembers([]);
                         }}
-                        className={`p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
+                        className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs transition-all cursor-pointer select-none ${
                           registrationType === "individual"
-                            ? "border-[#0D3481] bg-[#0D3481]/5"
-                            : "border-slate-200 hover:border-slate-300 bg-white"
+                            ? "bg-[#0D3481]/5 border-[#0D3481] text-[#0D3481] font-bold ring-1 ring-[#0D3481]/20 shadow-2xs"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
                         }`}
                       >
-                        <User
-                          className={`w-5 h-5 mb-1.5 ${
+                        <span
+                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
                             registrationType === "individual"
-                              ? "text-[#0D3481]"
-                              : "text-slate-400"
-                          }`}
-                        />
-                        <div
-                          className={`text-xs font-bold ${
-                            registrationType === "individual"
-                              ? "text-[#0D3481]"
-                              : "text-slate-700"
+                              ? "border-[#0D3481] bg-white"
+                              : "border-slate-300 bg-white"
                           }`}
                         >
-                          Individual
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          Solo project registration
-                        </div>
+                          {registrationType === "individual" && (
+                            <span className="w-2 h-2 rounded-full bg-[#0D3481]" />
+                          )}
+                        </span>
+                        <User className="w-3.5 h-3.5" />
+                        <span>Individual</span>
                       </button>
 
                       <button
@@ -1880,31 +1895,25 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                             ]);
                           }
                         }}
-                        className={`p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
+                        className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs transition-all cursor-pointer select-none ${
                           registrationType === "group"
-                            ? "border-[#0D3481] bg-[#0D3481]/5"
-                            : "border-slate-200 hover:border-slate-300 bg-white"
+                            ? "bg-[#0D3481]/5 border-[#0D3481] text-[#0D3481] font-bold ring-1 ring-[#0D3481]/20 shadow-2xs"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
                         }`}
                       >
-                        <Users
-                          className={`w-5 h-5 mb-1.5 ${
+                        <span
+                          className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
                             registrationType === "group"
-                              ? "text-[#0D3481]"
-                              : "text-slate-400"
-                          }`}
-                        />
-                        <div
-                          className={`text-xs font-bold ${
-                            registrationType === "group"
-                              ? "text-[#0D3481]"
-                              : "text-slate-700"
+                              ? "border-[#0D3481] bg-white"
+                              : "border-slate-300 bg-white"
                           }`}
                         >
-                          Group
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          Team project with members
-                        </div>
+                          {registrationType === "group" && (
+                            <span className="w-2 h-2 rounded-full bg-[#0D3481]" />
+                          )}
+                        </span>
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Group</span>
                       </button>
                     </div>
                   </div>
@@ -2403,7 +2412,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                                 <div className="p-3 bg-white border border-emerald-200 rounded-lg text-slate-800 flex items-center gap-2">
                                   <FileText className="w-4 h-4 text-red-500 shrink-0" />
                                   <div className="min-w-0">
-                                    <span className="text-[10px] text-slate-400 block font-semibold">Report Dossier</span>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Project Report</span>
                                     <span className="text-xs font-bold truncate block">
                                       {existingSubmission.finalSubmission.reportFileName}
                                     </span>
@@ -2415,7 +2424,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                                 <div className="p-3 bg-white border border-emerald-200 rounded-lg text-slate-800 flex items-center gap-2">
                                   <Presentation className="w-4 h-4 text-amber-500 shrink-0" />
                                   <div className="min-w-0">
-                                    <span className="text-[10px] text-slate-400 block font-semibold">Presentation Slides</span>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">PPT</span>
                                     <span className="text-xs font-bold truncate block">
                                       {existingSubmission.finalSubmission.slidesFileName}
                                     </span>
@@ -2445,7 +2454,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                           <div className="space-y-3">
                             <p className="text-xs text-slate-600 leading-relaxed">
                               {selectedForm?.finalSubmissionConfig?.instructions ||
-                                "Final submission phase has been opened by your coordinator. You can now submit your report dossier, Git repository link, and presentation slides."}
+                                "Final submission phase is open. You can now submit your project deliverables."}
                             </p>
                             <button
                               type="button"
@@ -2634,118 +2643,116 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
                 </p>
               </div>
 
-              {/* 1. Git Source Repository URL */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-800 flex items-center justify-between">
+              {/* 1. Git Repository Link */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5">
                     <FolderGit2 className="w-3.5 h-3.5 text-slate-700" />
-                    <span>Git Source Repository URL</span>
+                    <span>Git Repository</span>
                   </span>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Required
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      finalTargetForm.finalSubmissionConfig?.requireRepoUrl
+                        ? "text-red-700 bg-red-50 border border-red-200/80"
+                        : "text-slate-500 bg-slate-100"
+                    }`}
+                  >
+                    {finalTargetForm.finalSubmissionConfig?.requireRepoUrl ? "Mandatory" : "Optional"}
                   </span>
                 </label>
                 <input
                   type="url"
-                  required
-                  placeholder="https://github.com/username/project-repo"
+                  required={Boolean(finalTargetForm.finalSubmissionConfig?.requireRepoUrl)}
+                  placeholder="https://github.com/..."
                   value={finalRepoUrl}
                   onChange={(e) => setFinalRepoUrl(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
                 />
-                <span className="text-[10px] text-slate-400 block">
-                  Provide public repository URL with clear README and setup documentation.
-                </span>
+                <span className="text-[10px] text-slate-400 block">Repository link</span>
               </div>
 
-              {/* 2. Project Dossier / Report PDF */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-800 flex items-center justify-between">
+              {/* 2. Report Link */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-red-500" />
-                    <span>Project Report Dossier (PDF)</span>
+                    <span>Report</span>
                   </span>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Required
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      finalTargetForm.finalSubmissionConfig?.requireReport
+                        ? "text-red-700 bg-red-50 border border-red-200/80"
+                        : "text-slate-500 bg-slate-100"
+                    }`}
+                  >
+                    {finalTargetForm.finalSubmissionConfig?.requireReport ? "Mandatory" : "Optional"}
                   </span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. BCS751_Final_Project_Report.pdf"
-                    value={finalReportFileName}
-                    onChange={(e) => setFinalReportFileName(e.target.value)}
-                    className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
-                  />
-                  <label className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs cursor-pointer shrink-0 flex items-center gap-1.5 transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Browse</span>
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setFinalReportFileName(file.name);
-                      }}
-                    />
-                  </label>
-                </div>
-                <span className="text-[10px] text-slate-400 block">
-                  Max file size: {finalTargetForm.finalSubmissionConfig?.maxFileSizeMb || 25} MB (IEEE standard format)
-                </span>
-              </div>
-
-              {/* 3. Presentation Slides (PPT/PDF) */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-800 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Presentation className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Presentation Slides (PPT / PDF)</span>
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400">Optional</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. BCS751_Evaluation_Deck.pptx"
-                    value={finalSlidesFileName}
-                    onChange={(e) => setFinalSlidesFileName(e.target.value)}
-                    className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
-                  />
-                  <label className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-700 font-bold text-xs cursor-pointer shrink-0 flex items-center gap-1.5 transition-colors">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Browse</span>
-                    <input
-                      type="file"
-                      accept=".pdf,.ppt,.pptx"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setFinalSlidesFileName(file.name);
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* 4. Prototype / Live Demo URL */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-800 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Prototype / Hosted Live Demo URL</span>
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400">Optional</span>
                 </label>
                 <input
                   type="url"
-                  placeholder="https://my-project-demo.vercel.app or Google Drive video link"
+                  required={Boolean(finalTargetForm.finalSubmissionConfig?.requireReport)}
+                  placeholder="https://drive.google.com/... or hosted PDF link"
+                  value={finalReportFileName}
+                  onChange={(e) => setFinalReportFileName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                />
+                <span className="text-[10px] text-slate-400 block">PDF format</span>
+              </div>
+
+              {/* 3. PPT Link */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <Presentation className="w-3.5 h-3.5 text-amber-500" />
+                    <span>PPT</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      finalTargetForm.finalSubmissionConfig?.requireSlides
+                        ? "text-red-700 bg-red-50 border border-red-200/80"
+                        : "text-slate-500 bg-slate-100"
+                    }`}
+                  >
+                    {finalTargetForm.finalSubmissionConfig?.requireSlides ? "Mandatory" : "Optional"}
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  required={Boolean(finalTargetForm.finalSubmissionConfig?.requireSlides)}
+                  placeholder="https://docs.google.com/presentation/... or slide link"
+                  value={finalSlidesFileName}
+                  onChange={(e) => setFinalSlidesFileName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                />
+                <span className="text-[10px] text-slate-400 block">Presentation link</span>
+              </div>
+
+              {/* 4. Demo Link */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Demo</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      finalTargetForm.finalSubmissionConfig?.requireDemoUrl
+                        ? "text-red-700 bg-red-50 border border-red-200/80"
+                        : "text-slate-500 bg-slate-100"
+                    }`}
+                  >
+                    {finalTargetForm.finalSubmissionConfig?.requireDemoUrl ? "Mandatory" : "Optional"}
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  required={Boolean(finalTargetForm.finalSubmissionConfig?.requireDemoUrl)}
+                  placeholder="https://... live demo or video link"
                   value={finalDemoUrl}
                   onChange={(e) => setFinalDemoUrl(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
                 />
+                <span className="text-[10px] text-slate-400 block">Live URL</span>
               </div>
 
               {/* 5. Notes / Remarks */}

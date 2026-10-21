@@ -103,7 +103,7 @@ function initiativeToProject(item: any): Project {
     year: item.year,
     session: "2026-27",
     facultyGuide: item.coordinator?.name || item.publishedBy || "Rahul Singh (HOD)",
-    teamLead: `Cohort (Sec ${item.section || "All"})`,
+    teamLead: `Sec ${item.section || "All"}`,
     teamLeadAfn: item.section ? `Sec ${item.section}` : "All",
     teamLeadRoll: item.id,
     teamSize: 0,
@@ -132,6 +132,43 @@ function getSectionLetter(project: Project): string {
     if (cleaned) return cleaned.toUpperCase();
   }
   return "A";
+}
+
+/**
+ * Checks whether a deadline date string has ended.
+ * For YYYY-MM-DD inputs, considers the date ended after 23:59:59.999 local/system time.
+ */
+export function isDateEnded(dateStr?: string | null): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  if (!dateStr.includes("T") || dateStr.endsWith("T00:00:00") || dateStr.endsWith("00:00:00.000Z")) {
+    d.setHours(23, 59, 59, 999);
+  }
+  return new Date().getTime() > d.getTime();
+}
+
+/**
+ * Determines if a project form has completed its full lifecycle.
+ * A form lifecycle is ended if:
+ * 1. Form status is explicitly "completed", "closed", or "archived"
+ * 2. OR the form's final submission deadline (if defined) has passed
+ * 3. OR the form's registration last date (deadline) has passed
+ */
+export function isFormLifecycleEnded(form: any): boolean {
+  if (!form) return false;
+  if (form.isTrashed) return false;
+
+  const statusLower = String(form.status || "").toLowerCase().trim();
+  if (statusLower === "completed" || statusLower === "closed" || statusLower === "archived") {
+    return true;
+  }
+
+  // The last date of the entire lifecycle is either finalSubmissionDeadline (if configured) or deadline
+  const finalDeadline = form.finalSubmissionDeadline || form.deadline;
+  if (!finalDeadline) return false;
+
+  return isDateEnded(finalDeadline);
 }
 
 export function ProjectsTable() {
@@ -233,28 +270,69 @@ export function ProjectsTable() {
     const result: Project[] = [];
 
     // The Project Directory is strictly the archive for completed projects
-    // (projects finally submitted by the student and the whole process was successful)
+    // after a full lifecycle (when the project is submitted and the form last date & whole lifecycle have ended).
     Object.keys(publicSubmissions).forEach((formKey) => {
       const subs = publicSubmissions[formKey];
       if (Array.isArray(subs)) {
+        const cleanFormKey = String(formKey || "").trim().toLowerCase();
+        const matchedForm = initiatives.find((f: any) => {
+          const fId = String(f.id || "").trim().toLowerCase();
+          const fCode = String(f.subjectCode || "").trim().toLowerCase();
+          return (fId && fId === cleanFormKey) || (fCode && fCode === cleanFormKey);
+        });
+
         subs.forEach((sub: any, idx: number) => {
-          const isSuccessful =
+          const subFormKey = String(sub.formId || "").trim().toLowerCase();
+          const effectiveForm =
+            matchedForm ||
+            (subFormKey
+              ? initiatives.find((f: any) => {
+                  const fId = String(f.id || "").trim().toLowerCase();
+                  const fCode = String(f.subjectCode || "").trim().toLowerCase();
+                  return (fId && fId === subFormKey) || (fCode && fCode === subFormKey);
+                })
+              : null) ||
+            sub.form;
+
+          // Projects only appear in the Project Directory once the form last date
+          // has ended and the whole lifecycle is completed
+          if (!effectiveForm) {
+            return;
+          }
+
+          if (!isFormLifecycleEnded(effectiveForm)) {
+            return;
+          }
+
+          // Disregard rejected submissions
+          const isRejected =
+            String(sub.approvalStatus || "").toLowerCase() === "not_approved" ||
+            String(sub.approvalStatus || "").toLowerCase() === "rejected" ||
+            String(sub.verificationStatus || "").toLowerCase() === "rejected";
+          if (isRejected) {
+            return;
+          }
+
+          // A project submitted by a student
+          const isSubmitted =
             sub.status?.toLowerCase() === "completed" ||
             sub.finalSubmissionCompleted === true ||
             sub.verificationStatus?.toLowerCase() === "verified" ||
-            sub.approvalStatus?.toLowerCase() === "approved";
+            sub.approvalStatus?.toLowerCase() === "approved" ||
+            Boolean(sub.submittedAt) ||
+            Boolean(sub.projectName);
 
-          if (isSuccessful) {
+          if (isSubmitted) {
             result.push({
               id: `PRJ-${sub.student?.afn || idx}-${formKey}`,
-              code: sub.formId || formKey,
+              code: sub.formId || effectiveForm.id || formKey,
               title: sub.projectName || "Student Project",
               domain: sub.projectDescription ? sub.projectDescription.slice(0, 60) + "..." : "Completed Project",
-              branch: sub.student?.stream || "Computer Science & Engineering",
-              course: sub.student?.course || "B.Tech",
-              year: sub.student?.year || "4th Year",
+              branch: sub.student?.stream || effectiveForm.stream || "Computer Science & Engineering",
+              course: sub.student?.course || effectiveForm.course || "B.Tech",
+              year: sub.student?.year || effectiveForm.year || "4th Year",
               session: sub.session || "2026-27",
-              facultyGuide: sub.guideName || "Rahul Singh (HOD)",
+              facultyGuide: sub.guideName || effectiveForm.coordinator?.name || effectiveForm.publishedBy || "Rahul Singh (HOD)",
               teamLead: sub.student?.name || "Student Lead",
               teamLeadAfn: sub.student?.afn || "—",
               teamLeadRoll: sub.student?.rollNumber || "—",
@@ -264,7 +342,7 @@ export function ProjectsTable() {
                 ? new Date(sub.submittedAt).toLocaleDateString("en-IN")
                 : "Completed",
               isInitiative: false,
-              section: sub.student?.section || "A",
+              section: sub.student?.section || effectiveForm.section || "A",
             });
           }
         });
@@ -272,7 +350,7 @@ export function ProjectsTable() {
     });
 
     return result;
-  }, [isMounted, publicSubmissions]);
+  }, [isMounted, publicSubmissions, initiatives]);
 
   const isCompleted = (p: Project) => {
     return p.status?.toLowerCase() === "completed";
@@ -809,7 +887,7 @@ export function ProjectsTable() {
                       <p className="text-xs text-slate-400 mt-1 max-w-sm">
                         {isFiltered
                           ? "No completed projects match the current search or filter selection."
-                          : "Projects will appear here once students complete final submission and the evaluation process is marked successful."}
+                          : "Projects will appear here once submitted by students and after the form last date and full project lifecycle have ended."}
                       </p>
                       {isFiltered && (
                         <button
@@ -982,7 +1060,7 @@ export function ProjectsTable() {
               </div>
               <div>
                 <span className="text-slate-400 font-semibold uppercase text-[10px]">
-                  {selectedProject.isInitiative ? "Target Cohort" : "Team Lead"}
+                  {selectedProject.isInitiative ? "Target Section" : "Team Lead"}
                 </span>
                 <p className="font-bold text-slate-800">
                   {selectedProject.isInitiative

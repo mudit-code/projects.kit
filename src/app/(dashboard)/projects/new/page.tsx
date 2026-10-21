@@ -19,7 +19,11 @@ import {
   UserCheck,
   UserCog,
   GraduationCap,
+  Copy,
+  Check,
+  MessageCircle,
 } from "lucide-react";
+import { LOGOS } from "@/lib/logos";
 import { DynamicSelect } from "@/components/DynamicSelect";
 import {
   CustomDatePicker,
@@ -104,7 +108,7 @@ export default function StartProjectPage() {
   const [startDate, setStartDate] = useState(() => getTodayIso());
   const [deadline, setDeadline] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 45); // default 45 days
+    d.setDate(d.getDate() + 15); // default 15 days
     return formatToIsoDate(d);
   });
 
@@ -122,7 +126,7 @@ export default function StartProjectPage() {
     // If current deadline is earlier than the new start date, auto-advance deadline
     if (deadline < validatedStart) {
       const d = parseLocalDate(validatedStart) || new Date();
-      d.setDate(d.getDate() + 30);
+      d.setDate(d.getDate() + 15);
       setDeadline(formatToIsoDate(d));
     }
     setErrorMsg("");
@@ -140,6 +144,10 @@ export default function StartProjectPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [createdForm, setCreatedForm] = useState<any | null>(null);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsappCaption, setWhatsappCaption] = useState("");
+  const [copiedCaption, setCopiedCaption] = useState(false);
 
   // Handle category toggle
   const handleCategorySelect = (val: "Academic" | "Non-Academic") => {
@@ -205,6 +213,20 @@ export default function StartProjectPage() {
       ? `${customProjectName.trim()} Registration Form`
       : `${projectType || "Project"} Registration Form`;
 
+    const coordinatorInfo = category === "Academic" && assignedTo === "faculty"
+      ? {
+          name: facultyName.trim(),
+          email: facultyEmail.trim(),
+          phone: facultyPhone.trim(),
+          role: "Faculty"
+        }
+      : {
+          name: "Rahul Singh",
+          email: "muditcodes@gmail.com",
+          phone: "+91 98765 43210",
+          role: "HOD"
+        };
+
     const newInitiative = {
       id: `INIT-${Date.now().toString().slice(-6)}`,
       title: formTitle,
@@ -228,46 +250,59 @@ export default function StartProjectPage() {
         ? `Rahul Singh (HOD) · Coordinator: ${facultyName.trim()}`
         : "Rahul Singh (HOD)",
       assignedTo: category === "Academic" ? assignedTo : "self",
-      coordinator: category === "Academic" && assignedTo === "faculty"
-        ? {
-            name: facultyName.trim(),
-            email: facultyEmail.trim(),
-            phone: facultyPhone.trim(),
-            role: "Faculty"
-          }
-        : {
-            name: "Rahul Singh",
-            email: "muditcodes@gmail.com",
-            phone: "+91 98765 43210",
-            role: "HOD"
-          },
+      coordinator: coordinatorInfo,
     };
 
-    // Save to real database via API
     try {
-      await fetch("/api/forms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newInitiative),
-      });
-    } catch (err) {
-      console.warn("Could not sync initiative to server database:", err);
-    }
+      // 1. Save to real database via API
+      try {
+        await fetch("/api/forms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newInitiative),
+        });
+      } catch (err) {
+        console.warn("Could not sync initiative to server database:", err);
+      }
 
-    // Also update client state for instantaneous optimistic UI update
-    try {
-      const existing = JSON.parse(localStorage.getItem("kit_published_initiatives") || "[]");
-      existing.unshift(newInitiative);
-      localStorage.setItem("kit_published_initiatives", JSON.stringify(existing));
-      window.dispatchEvent(new Event("kit-initiatives-change"));
-    } catch {
-      // ignore
-    }
+      // 2. Also update client state for instantaneous optimistic UI update
+      try {
+        const existing = JSON.parse(localStorage.getItem("kit_published_initiatives") || "[]");
+        existing.unshift(newInitiative);
+        localStorage.setItem("kit_published_initiatives", JSON.stringify(existing));
+        window.dispatchEvent(new Event("kit-initiatives-change"));
+      } catch (err) {
+        console.warn("LocalStorage save error:", err);
+      }
 
-    setIsSuccess(true);
-    setTimeout(() => {
-      router.push("/hod/forms");
-    }, 1500);
+      // 3. Prepare pre-filled WhatsApp caption notice
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const portalUrl = `${origin}/student`;
+      const caption = `📢 *OFFICIAL NOTICE: PROJECT INITIATION & SYNOPSIS SUBMISSION*
+
+🎓 *Course:* ${course} (${stream})
+📚 *Subject:* ${newInitiative.subjectCode} - ${newInitiative.customProjectName || newInitiative.projectType}
+👥 *Target Class:* ${year}${section !== "All" ? ` (Section ${section})` : ""}
+📅 *Submission Deadline:* ${formatDisplayDate(deadline)}
+
+Dear Students,
+The project registration and synopsis submission window is now officially OPEN. All teams must register their project title, team members, and upload their synopsis before the deadline.
+
+🔗 *Student Portal:* ${portalUrl}
+👤 *Coordinator:* ${coordinatorInfo.name} (${coordinatorInfo.role})
+
+⚠️ *Note:* Submissions close promptly on the deadline. Please submit well in advance.`;
+
+      setCreatedForm(newInitiative);
+      setWhatsappCaption(caption);
+      setIsSuccess(true);
+      setShowWhatsAppModal(true);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err?.message || "Failed to publish form. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -284,7 +319,7 @@ export default function StartProjectPage() {
                   Start a New Project
                 </h1>
                 <p className="text-xs text-slate-500 mt-1">
-                  Configure course, stream, subject code, and submission windows to publish to student cohorts.
+                  Configure course, stream, subject code, and submission windows to publish to students.
                 </p>
               </div>
             </div>
@@ -302,7 +337,7 @@ export default function StartProjectPage() {
             <div>
               <p className="font-bold text-sm">Project Successfully Published!</p>
               <p className="text-xs text-emerald-700 mt-0.5">
-                Cohort notified in {course} {stream} ({year} - Sec {section}). Redirecting to published forms...
+                Students notified in {course} {stream} ({year} - Sec {section}). Redirecting to published forms...
               </p>
             </div>
           </div>
@@ -330,12 +365,12 @@ export default function StartProjectPage() {
             </div>
           )}
 
-          {/* Section 1: Target Student Cohort */}
+          {/* Section 1: Target Students */}
           <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-[#0D3481]" />
-                <h2 className="text-sm font-bold text-slate-900">1. Target Student Cohort</h2>
+                <h2 className="text-sm font-bold text-slate-900">1. Target Students</h2>
               </div>
               <span className="text-[11px] font-semibold text-slate-400">
                 Academic Session 2026-27
@@ -343,7 +378,7 @@ export default function StartProjectPage() {
             </div>
 
             <p className="text-xs text-slate-500">
-              Configure target course, engineering branch, academic year, and section cohort.
+              Configure target course, engineering branch, academic year, and section.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -393,7 +428,6 @@ export default function StartProjectPage() {
                   options={SECTIONS.map((sec) => ({
                     value: sec,
                     label: sec === "All" ? "All Sections" : `Section ${sec}`,
-                    description: sec === "All" ? "All Sections Cohort" : `Section ${sec} Cohort`,
                   }))}
                   icon={Users}
                 />
@@ -402,52 +436,60 @@ export default function StartProjectPage() {
           </div>
 
           {/* Section 2: Project Category */}
-          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4">
+          <div className="p-6 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
               <Layers className="w-4 h-4 text-[#0D3481]" />
               <h2 className="text-sm font-bold text-slate-900">2. Project Category</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => handleCategorySelect("Academic")}
-                className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs transition-all cursor-pointer select-none ${
                   category === "Academic"
-                    ? "bg-[#0D3481]/5 border-[#0D3481] text-[#0D3481] font-bold shadow-2xs"
-                    : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                    ? "bg-[#0D3481]/5 border-[#0D3481] text-[#0D3481] font-bold ring-1 ring-[#0D3481]/20 shadow-2xs"
+                    : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-blue-100/60 text-[#0D3481] flex items-center justify-center">
-                    <BookOpen className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-bold">Academic Project</span>
-                    <span className="block text-xs text-slate-500 font-normal">
-                      Curricular mini projects, capstone, or degree rubrics
-                    </span>
-                  </div>
-                </div>
-                {category === "Academic" && <CheckCircle2 className="w-5 h-5 text-[#0D3481]" />}
+                <span
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                    category === "Academic"
+                      ? "border-[#0D3481] bg-white"
+                      : "border-slate-300 bg-white"
+                  }`}
+                >
+                  {category === "Academic" && (
+                    <span className="w-2 h-2 rounded-full bg-[#0D3481]" />
+                  )}
+                </span>
+                <span>Academic Project</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleCategorySelect("Non-Academic")}
-                className="p-4 rounded-xl border bg-white border-slate-200 text-slate-700 hover:bg-slate-50 text-left transition-all cursor-pointer flex items-center justify-between"
+                className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs transition-all cursor-pointer select-none ${
+                  category === "Non-Academic"
+                    ? "bg-[#0D3481]/5 border-[#0D3481] text-[#0D3481] font-bold ring-1 ring-[#0D3481]/20 shadow-2xs"
+                    : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium"
+                }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center">
-                    <FolderGit2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-bold">Non-Academic Project</span>
-                    <span className="block text-xs text-amber-600 font-semibold">
-                      Announce feature coming soon
-                    </span>
-                  </div>
-                </div>
+                <span
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                    category === "Non-Academic"
+                      ? "border-[#0D3481] bg-white"
+                      : "border-slate-300 bg-white"
+                  }`}
+                >
+                  {category === "Non-Academic" && (
+                    <span className="w-2 h-2 rounded-full bg-[#0D3481]" />
+                  )}
+                </span>
+                <span>Non-Academic Project</span>
+                <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 px-1.5 py-0.5 rounded-md">
+                  Coming soon
+                </span>
               </button>
             </div>
           </div>
@@ -661,7 +703,6 @@ export default function StartProjectPage() {
                 onChange={handleStartDateChange}
                 minDate={getTodayIso()}
                 required
-                ruleBadge="Rule: Today or future only"
                 helperText="Submissions and team registration open on this date"
                 highlightRange={{ start: startDate, end: deadline }}
                 presets={[
@@ -677,39 +718,14 @@ export default function StartProjectPage() {
                 onChange={handleDeadlineChange}
                 minDate={startDate}
                 required
-                ruleBadge="Rule: On or after start date"
                 helperText="Final date for students to submit synopsis/teams"
                 highlightRange={{ start: startDate, end: deadline }}
                 presets={[
+                  { label: "+10 Days", daysFromBase: 10 },
                   { label: "+15 Days", daysFromBase: 15 },
                   { label: "+30 Days", daysFromBase: 30 },
-                  { label: "+45 Days", daysFromBase: 45 },
-                  { label: "+60 Days", daysFromBase: 60 },
                 ]}
               />
-            </div>
-
-            {/* Live Visual Timeline Summary */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-800">
-                    {formatDisplayDate(startDate)} &rarr; {formatDisplayDate(deadline)}
-                  </span>
-                  <p className="text-[11px] text-slate-500">
-                    Registration and submissions window enforced by institutional rubric policy.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Rules Verified
-                </span>
-              </div>
             </div>
 
             <p className="text-xs text-slate-500 pt-1">
@@ -736,6 +752,148 @@ export default function StartProjectPage() {
             </button>
           </div>
         </form>
+
+        {/* ─── WHATSAPP SHARE NOTICE MODAL ─── */}
+        {showWhatsAppModal && createdForm && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header with WhatsApp branding */}
+              <div className="p-6 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-start justify-between">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/20 shadow-xs">
+                    <img
+                      src={LOGOS.whatsapp}
+                      alt="WhatsApp"
+                      className="w-7 h-7 object-contain"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
+                    />
+                    <MessageCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
+                        Form Published
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-white mt-1 leading-tight">
+                      Share Notice with Students
+                    </h3>
+                    <p className="text-xs text-emerald-100 mt-0.5">
+                      Forward this announcement directly to your student WhatsApp groups.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/hod/forms")}
+                  className="p-1.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* Form Quick Info */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-900 block text-sm">
+                      {createdForm.subjectCode} · {createdForm.customProjectName || createdForm.projectType}
+                    </span>
+                    <span className="text-slate-500 text-[11px]">
+                      {createdForm.course} {createdForm.stream} ({createdForm.year} - Sec {createdForm.section})
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Deadline</span>
+                    <span className="font-bold text-emerald-700 text-xs">
+                      {formatDisplayDate(createdForm.deadline)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Caption Preview & Edit */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <span>WhatsApp Notice Caption</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      You can edit before forwarding
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <textarea
+                      rows={8}
+                      value={whatsappCaption}
+                      onChange={(e) => setWhatsappCaption(e.target.value)}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-800 leading-relaxed resize-none focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(whatsappCaption);
+                    setCopiedCaption(true);
+                    setTimeout(() => setCopiedCaption(false), 2500);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  {copiedCaption ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">Notice Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Copy Notice</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/hod/forms")}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Done
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappCaption)}`;
+                      window.open(waUrl, "_blank");
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <img src={LOGOS.whatsapp} alt="WA" className="w-4 h-4 object-contain brightness-0 invert" />
+                    <span>Open WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
   );
 }

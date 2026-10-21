@@ -206,7 +206,7 @@ export function FacultyHodMobileApp({ role }: FacultyHodMobileAppProps) {
       if (res.ok) {
         showToast(`Dispatched official reminder to ${submission.student?.name || "student"}.`);
       } else {
-        showToast("Reminder cooldown active for this cohort.");
+        showToast("Reminder cooldown active for these students.");
       }
     } catch {
       showToast("Reminder dispatched in local log mode.");
@@ -280,7 +280,7 @@ export function FacultyHodMobileApp({ role }: FacultyHodMobileAppProps) {
           : activeTab === "forms"
           ? "Academic Forms"
           : activeTab === "students"
-          ? "Student Cohort"
+          ? "Students Directory"
           : activeTab === "projects"
           ? "Projects Review"
           : "Settings & Tools"
@@ -340,10 +340,10 @@ export function FacultyHodMobileApp({ role }: FacultyHodMobileAppProps) {
                     <span>Active Forms</span>
                     <FileCheck2 className="w-4 h-4 text-[#0B2A6F] dark:text-blue-400" />
                   </div>
-                  <div className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                  <div suppressHydrationWarning className="text-2xl font-extrabold text-slate-900 dark:text-white">
                     {forms.length}
                   </div>
-                  <span className="text-[10px] text-slate-400 font-medium">Published cohorts</span>
+                  <span suppressHydrationWarning className="text-[10px] text-slate-400 font-medium">Published forms</span>
                 </div>
               </div>
 
@@ -427,7 +427,7 @@ export function FacultyHodMobileApp({ role }: FacultyHodMobileAppProps) {
               <SearchField
                 value={searchQuery}
                 onChange={setSearchQuery}
-                placeholder="Search cohorts or subjects..."
+                placeholder="Search forms or subjects..."
               />
 
               <div className="rounded-2xl border border-neutral-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden divide-y divide-neutral-100 dark:divide-slate-800 shadow-xs">
@@ -535,7 +535,7 @@ export function FacultyHodMobileApp({ role }: FacultyHodMobileAppProps) {
               {/* Desktop-Only Heavy Admin Notice Cards */}
               <DesktopOnlyCard
                 featureName="CSV Batch Import & Roll Roster Mapping"
-                description="Complex spreadsheet parsing and multi-cohort student uploads require wider displays and keyboard navigation."
+                description="Complex spreadsheet parsing and multi-section student uploads require wider displays and keyboard navigation."
               />
 
               {role === "HOD" && (

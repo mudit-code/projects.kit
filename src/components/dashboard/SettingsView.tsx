@@ -308,7 +308,7 @@ export function SettingsView({ role = "HOD" }: SettingsViewProps) {
                   <div>
                     <span className="font-bold text-slate-800 block">Email Reminder Notifications</span>
                     <span className="text-xs text-slate-500">
-                      Receive activity notifications and dispatch receipts for student cohorts.
+                      Receive activity notifications and dispatch receipts for students.
                     </span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

@@ -312,22 +312,32 @@ export function StudentFormFocusFlow({
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
                 Registration Type
               </label>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
                   onClick={() => {
                     setRegistrationType("individual");
                     setTeamMembers([]);
                   }}
-                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs transition-all cursor-pointer select-none ${
                     registrationType === "individual"
-                      ? "border-[#0B2A6F] bg-blue-50/60 dark:bg-blue-950/40 text-[#0B2A6F] dark:text-blue-400 font-bold"
-                      : "border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                      ? "border-[#0B2A6F] bg-blue-50/60 dark:bg-blue-950/40 text-[#0B2A6F] dark:text-blue-400 font-bold ring-1 ring-[#0B2A6F]/20"
+                      : "border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/80"
                   }`}
                 >
-                  <User className="w-4 h-4 mb-1" />
-                  <div className="text-xs">Individual</div>
-                  <div className="text-[10px] text-slate-400 font-normal">Solo project</div>
+                  <span
+                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                      registrationType === "individual"
+                        ? "border-[#0B2A6F] dark:border-blue-400 bg-white dark:bg-slate-900"
+                        : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                    }`}
+                  >
+                    {registrationType === "individual" && (
+                      <span className="w-2 h-2 rounded-full bg-[#0B2A6F] dark:bg-blue-400" />
+                    )}
+                  </span>
+                  <User className="w-3.5 h-3.5" />
+                  <span>Individual</span>
                 </button>
 
                 <button
@@ -336,15 +346,25 @@ export function StudentFormFocusFlow({
                     setRegistrationType("group");
                     if (teamMembers.length === 0) setTeamMembers([{ afn: "", name: "" }]);
                   }}
-                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs transition-all cursor-pointer select-none ${
                     registrationType === "group"
-                      ? "border-[#0B2A6F] bg-blue-50/60 dark:bg-blue-950/40 text-[#0B2A6F] dark:text-blue-400 font-bold"
-                      : "border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                      ? "border-[#0B2A6F] bg-blue-50/60 dark:bg-blue-950/40 text-[#0B2A6F] dark:text-blue-400 font-bold ring-1 ring-[#0B2A6F]/20"
+                      : "border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800/80"
                   }`}
                 >
-                  <Users className="w-4 h-4 mb-1" />
-                  <div className="text-xs">Group</div>
-                  <div className="text-[10px] text-slate-400 font-normal">Team project</div>
+                  <span
+                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                      registrationType === "group"
+                        ? "border-[#0B2A6F] dark:border-blue-400 bg-white dark:bg-slate-900"
+                        : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                    }`}
+                  >
+                    {registrationType === "group" && (
+                      <span className="w-2 h-2 rounded-full bg-[#0B2A6F] dark:bg-blue-400" />
+                    )}
+                  </span>
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Group</span>
                 </button>
               </div>
             </div>

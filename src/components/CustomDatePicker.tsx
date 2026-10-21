@@ -102,7 +102,7 @@ export interface CustomDatePickerProps {
   };
   required?: boolean;
   name?: string;
-  popoverPlacement?: "top" | "bottom";
+  popoverPlacement?: "top" | "bottom" | "auto";
 }
 
 export function CustomDatePicker({
@@ -120,15 +120,60 @@ export function CustomDatePicker({
   highlightRange,
   required = false,
   name,
-  popoverPlacement = "top",
+  popoverPlacement = "auto",
 }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [viewMode, setViewMode] = useState<"days" | "months" | "years">("days");
+  const [resolvedPlacement, setResolvedPlacement] = useState<"top" | "bottom">("bottom");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Dynamic placement detection (prevents cropping in modals or top-of-page containers)
+  useEffect(() => {
+    if (!isOpen || isMobile) return;
+
+    if (popoverPlacement === "top") {
+      setResolvedPlacement("top");
+      return;
+    }
+    if (popoverPlacement === "bottom") {
+      setResolvedPlacement("bottom");
+      return;
+    }
+
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const CALENDAR_HEIGHT = 300;
+
+      // Check space above within any scrollable or overflow parent
+      let parent = triggerRef.current.parentElement;
+      let spaceAboveInScrollParent = rect.top;
+      while (parent && parent !== document.body) {
+        const style = window.getComputedStyle(parent);
+        if (
+          style.overflowY === "auto" ||
+          style.overflowY === "scroll" ||
+          style.overflowY === "hidden"
+        ) {
+          const parentRect = parent.getBoundingClientRect();
+          spaceAboveInScrollParent = rect.top - parentRect.top;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+
+      if (spaceAboveInScrollParent < CALENDAR_HEIGHT) {
+        setResolvedPlacement("bottom");
+      } else if (window.innerHeight - rect.bottom < CALENDAR_HEIGHT && rect.top >= CALENDAR_HEIGHT) {
+        setResolvedPlacement("top");
+      } else {
+        setResolvedPlacement("bottom");
+      }
+    }
+  }, [isOpen, isMobile, popoverPlacement]);
 
   // Active view date (Month & Year currently browsed)
   const initialDate = useMemo(() => {
@@ -388,82 +433,74 @@ export function CustomDatePicker({
     return list;
   }, [minDateParsed, currentYear]);
 
-  /* ──────────────────────────────────────────────────────────────────────────
-     CALENDAR BODY CONTENT
-  ────────────────────────────────────────────────────────────────────────── */
+  // ─── Render Calendar Content ──────────────────────────────────────────
   const renderCalendarContent = () => (
-    <div className="space-y-3.5 select-none">
+    <div className="space-y-2 select-none">
       {/* Calendar Top Navigation Bar */}
-      <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setViewMode(viewMode === "days" ? "months" : "days")}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-800 hover:text-[#0D3481] hover:bg-[#0D3481]/8 transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold text-slate-800 hover:text-[#0D3481] hover:bg-[#0D3481]/8 transition-all cursor-pointer"
           >
             <span>{MONTH_NAMES[currentMonth]}</span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+            <ChevronDown className="w-3 h-3 opacity-60" />
           </button>
 
           <button
             type="button"
             onClick={() => setViewMode(viewMode === "years" ? "days" : "years")}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-800 hover:text-[#0D3481] hover:bg-[#0D3481]/8 transition-all cursor-pointer"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold text-slate-800 hover:text-[#0D3481] hover:bg-[#0D3481]/8 transition-all cursor-pointer"
           >
             <span>{currentYear}</span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+            <ChevronDown className="w-3 h-3 opacity-60" />
           </button>
         </div>
 
         {viewMode === "days" && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
               disabled={!canGoPrev}
               onClick={handlePrevMonth}
               title={canGoPrev ? "Previous month" : "Earlier dates restricted"}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
               disabled={!canGoNext}
               onClick={handleNextMonth}
               title={canGoNext ? "Next month" : "Later dates restricted"}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-25 disabled:cursor-not-allowed transition-colors cursor-pointer"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
       </div>
 
-      {/* Preset Quick Chips at Top (immediately visible without scrolling) */}
+      {/* Preset Quick Chips at Top (without description header) */}
       {viewMode === "days" && presets && presets.length > 0 && (
-        <div className="pb-2 mb-1 border-b border-slate-100">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-[#0D3481]" />
-            <span>Quick Presets</span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {presets.map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => handleSelectPreset(preset)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 hover:bg-[#0D3481] hover:text-white text-slate-700 transition-colors cursor-pointer"
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
+        <div className="pb-1.5 border-b border-slate-100 flex flex-wrap gap-1">
+          {presets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => handleSelectPreset(preset)}
+              className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 hover:bg-[#0D3481] hover:text-white text-slate-700 transition-colors cursor-pointer"
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
       )}
 
       {/* Month Selection Grid */}
       {viewMode === "months" && (
-        <div className="grid grid-cols-3 gap-2 py-2">
+        <div className="grid grid-cols-3 gap-1.5 py-1">
           {MONTH_NAMES.map((name, idx) => {
             const isSelected = idx === currentMonth;
             return (
@@ -474,7 +511,7 @@ export function CustomDatePicker({
                   setCurrentMonth(idx);
                   setViewMode("days");
                 }}
-                className={`py-2 px-2.5 text-xs font-semibold rounded-xl text-center transition-all cursor-pointer ${
+                className={`py-1.5 px-2 text-xs font-semibold rounded-lg text-center transition-all cursor-pointer ${
                   isSelected
                     ? "bg-[#0D3481] text-white shadow-xs"
                     : "text-slate-700 hover:bg-[#0D3481]/10 hover:text-[#0D3481]"
@@ -489,7 +526,7 @@ export function CustomDatePicker({
 
       {/* Year Selection Grid */}
       {viewMode === "years" && (
-        <div className="grid grid-cols-3 gap-2 py-2">
+        <div className="grid grid-cols-3 gap-1.5 py-1">
           {yearsList.map((y) => {
             const isSelected = y === currentYear;
             return (
@@ -500,7 +537,7 @@ export function CustomDatePicker({
                   setCurrentYear(y);
                   setViewMode("days");
                 }}
-                className={`py-2 px-2.5 text-xs font-semibold rounded-xl text-center transition-all cursor-pointer ${
+                className={`py-1.5 px-2 text-xs font-semibold rounded-lg text-center transition-all cursor-pointer ${
                   isSelected
                     ? "bg-[#0D3481] text-white shadow-xs"
                     : "text-slate-700 hover:bg-[#0D3481]/10 hover:text-[#0D3481]"
@@ -517,11 +554,11 @@ export function CustomDatePicker({
       {viewMode === "days" && (
         <div>
           {/* Weekday Labels Header */}
-          <div className="grid grid-cols-7 mb-1.5 text-center">
+          <div className="grid grid-cols-7 mb-1 text-center">
             {WEEKDAYS.map((wd) => (
               <div
                 key={wd}
-                className="text-[11px] font-bold text-slate-400 uppercase tracking-wider py-1"
+                className="text-[10px] font-bold text-slate-400 uppercase tracking-wider py-0.5"
               >
                 {wd}
               </div>
@@ -529,13 +566,13 @@ export function CustomDatePicker({
           </div>
 
           {/* Days Numbers Grid */}
-          <div className="grid grid-cols-7 gap-1 text-center">
+          <div className="grid grid-cols-7 gap-0.5 text-center">
             {calendarDays.map((cell, idx) => {
               if (!cell.isCurrentMonth) {
                 return (
                   <div
                     key={`overflow-${idx}`}
-                    className="h-8 flex items-center justify-center text-[11px] text-slate-300 select-none opacity-40 font-mono"
+                    className="h-7 flex items-center justify-center text-[10px] text-slate-300 select-none opacity-40 font-mono"
                   >
                     {cell.day}
                   </div>
@@ -549,10 +586,10 @@ export function CustomDatePicker({
                     key={cell.iso}
                     type="button"
                     onClick={() => handleSelectDate(cell.iso, cell.isDisabled)}
-                    className="h-8 rounded-xl bg-[#0D3481] text-white font-bold text-xs flex items-center justify-center shadow-md shadow-[#0D3481]/30 transition-transform active:scale-95 cursor-pointer relative"
+                    className="h-7 rounded-lg bg-[#0D3481] text-white font-bold text-[11px] flex items-center justify-center shadow-xs transition-transform active:scale-95 cursor-pointer relative"
                   >
                     <span>{cell.day}</span>
-                    <span className="w-1 h-1 rounded-full bg-white absolute bottom-1" />
+                    <span className="w-1 h-1 rounded-full bg-white absolute bottom-0.5" />
                   </button>
                 );
               }
@@ -560,9 +597,9 @@ export function CustomDatePicker({
               // Range edges and range middle
               let rangeClass = "";
               if (cell.isRangeStart) {
-                rangeClass = "bg-blue-100 text-[#0D3481] font-bold rounded-l-xl";
+                rangeClass = "bg-blue-100 text-[#0D3481] font-bold rounded-l-lg";
               } else if (cell.isRangeEnd) {
-                rangeClass = "bg-blue-100 text-[#0D3481] font-bold rounded-r-xl";
+                rangeClass = "bg-blue-100 text-[#0D3481] font-bold rounded-r-lg";
               } else if (cell.isInRange) {
                 rangeClass = "bg-blue-50/80 text-[#0D3481] font-medium";
               }
@@ -573,7 +610,7 @@ export function CustomDatePicker({
                   <div
                     key={cell.iso}
                     title="Not selectable under institutional policy"
-                    className="h-8 rounded-xl flex items-center justify-center text-[11px] font-medium text-slate-300 bg-slate-50/70 select-none cursor-not-allowed line-through decoration-slate-300/70"
+                    className="h-7 rounded-lg flex items-center justify-center text-[10px] font-medium text-slate-300 bg-slate-50/70 select-none cursor-not-allowed line-through decoration-slate-300/70"
                   >
                     {cell.day}
                   </div>
@@ -586,7 +623,7 @@ export function CustomDatePicker({
                   key={cell.iso}
                   type="button"
                   onClick={() => handleSelectDate(cell.iso, false)}
-                  className={`h-8 rounded-xl text-xs font-semibold text-slate-700 hover:bg-[#0D3481]/10 hover:text-[#0D3481] transition-all cursor-pointer flex items-center justify-center relative ${rangeClass} ${
+                  className={`h-7 rounded-lg text-[11px] font-semibold text-slate-700 hover:bg-[#0D3481]/10 hover:text-[#0D3481] transition-all cursor-pointer flex items-center justify-center relative ${rangeClass} ${
                     cell.isToday
                       ? "ring-1.5 ring-[#0D3481]/40 text-[#0D3481] font-bold bg-[#0D3481]/4"
                       : ""
@@ -594,7 +631,7 @@ export function CustomDatePicker({
                 >
                   <span>{cell.day}</span>
                   {cell.isToday && !cell.isSelected && (
-                    <span className="w-1 h-1 rounded-full bg-[#0D3481] absolute bottom-1" />
+                    <span className="w-1 h-1 rounded-full bg-[#0D3481] absolute bottom-0.5" />
                   )}
                 </button>
               );
@@ -603,22 +640,20 @@ export function CustomDatePicker({
         </div>
       )}
 
-
-
       {/* Bottom Status / Actions Bar */}
-      <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
+      <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-xs">
         <button
           type="button"
           disabled={Boolean(minDate && todayIso < minDate)}
           onClick={handleQuickToday}
-          className="text-[11px] font-bold text-[#0D3481] hover:underline disabled:opacity-30 disabled:no-underline cursor-pointer flex items-center gap-1"
+          className="text-[10px] font-bold text-[#0D3481] hover:underline disabled:opacity-30 disabled:no-underline cursor-pointer flex items-center gap-1"
         >
           <Clock className="w-3 h-3" />
           <span>Select Today</span>
         </button>
 
         {ruleBadge && (
-          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[170px]">
+          <span className="text-[9px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded truncate max-w-[140px]">
             {ruleBadge}
           </span>
         )}
@@ -629,7 +664,7 @@ export function CustomDatePicker({
             setIsOpen(false);
             setViewMode("days");
           }}
-          className="text-[11px] font-bold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+          className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-pointer"
         >
           Close
         </button>
@@ -716,13 +751,13 @@ export function CustomDatePicker({
         </p>
       )}
 
-      {/* ─── Desktop Anchored Popover (Screens >= 640px, opens above trigger so no scrolling needed) ─── */}
+      {/* ─── Desktop Anchored Popover (Screens >= 640px) ─── */}
       {isOpen && !isMobile && (
         <div
           role="dialog"
           aria-label={label || "Calendar"}
           className={`absolute left-0 z-50 bg-white/98 backdrop-blur-md rounded-2xl shadow-2xl shadow-slate-900/15 border border-slate-200/90 p-4 w-[330px] animate-in fade-in zoom-in-95 duration-150 text-left ${
-            popoverPlacement === "bottom"
+            resolvedPlacement === "bottom"
               ? "top-full mt-2 origin-top"
               : "bottom-full mb-2 origin-bottom"
           }`}

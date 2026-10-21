@@ -97,7 +97,7 @@ function initiativeToProject(item: any): Project {
     year: item.year,
     session: "2026-27",
     facultyGuide: item.coordinator?.name || item.publishedBy || "Rahul Singh (HOD)",
-    teamLead: `Cohort (Sec ${item.section || "All"})`,
+    teamLead: `Sec ${item.section || "All"}`,
     teamLeadAfn: item.section ? `Sec ${item.section}` : "All",
     teamLeadRoll: item.id,
     teamSize: 0,

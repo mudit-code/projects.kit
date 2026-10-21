@@ -296,7 +296,7 @@ export function UserSettingsModal({
                   <div>
                     <span className="font-bold text-slate-800 block">Email Reminder Notifications</span>
                     <span className="text-[11px] text-slate-500">
-                      Receive activity notifications when cohorts submit proposals.
+                      Receive activity notifications when students submit proposals.
                     </span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

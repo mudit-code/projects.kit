@@ -61,6 +61,7 @@ export interface ServerSubmission {
     name?: string;
     email?: string;
   }>;
+  form?: ServerForm;
 }
 
 /**
@@ -143,6 +144,7 @@ function mapPrismaSubmission(s: any): ServerSubmission {
       whatsapp: s.studentPhone || undefined,
     },
     teamMembers: parsedTeam,
+    ...(s.form ? { form: mapPrismaForm(s.form) } : {}),
   };
 }
 
@@ -306,6 +308,7 @@ export async function getAllServerSubmissions(): Promise<Record<string, ServerSu
   }
   try {
     const submissions = await prisma.submission.findMany({
+      include: { form: true },
       orderBy: { submittedAt: "desc" },
     });
 
@@ -345,6 +348,7 @@ export async function getServerSubmissionsForForm(formId: string): Promise<Serve
     where: {
       formId: { in: formIds },
     },
+    include: { form: true },
     orderBy: { submittedAt: "desc" },
   });
 

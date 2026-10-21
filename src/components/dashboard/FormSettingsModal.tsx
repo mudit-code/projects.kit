@@ -204,8 +204,8 @@ export function FormSettingsModal({
 
       showToast(
         cfg.enabled
-          ? "Final Submission phase is now ACTIVE for students!"
-          : "Final Submission settings saved (Phase is currently paused)."
+          ? "Final Submission is now open for students!"
+          : "Final Submission settings updated successfully."
       );
     } catch (err) {
       console.error(err);
@@ -340,15 +340,15 @@ export function FormSettingsModal({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 id="form-settings-title" className="text-base sm:text-lg font-extrabold text-[#10334A]">
-                    Form Settings &amp; Phases
+                  <h3 id="form-settings-title" className="text-base font-extrabold text-[#10334A]">
+                    Form Settings
                   </h3>
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-[#0D3481] border border-slate-200">
                     {subjectCode}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Configure project phases, presentation schedule, and administrative lifecycle for <strong className="text-slate-700">{formTitle}</strong>.
+                  {formTitle}
                 </p>
               </div>
             </div>
@@ -375,7 +375,7 @@ export function FormSettingsModal({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>Start Final Submission</span>
+              <span>Submissions</span>
               {finalConfig.enabled && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               )}
@@ -391,7 +391,7 @@ export function FormSettingsModal({
               }`}
             >
               <Presentation className="w-4 h-4" />
-              <span>Schedule Presentations</span>
+              <span>Presentations</span>
               {presConfig.slots.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-[#0D3481] text-[10px]">
                   {presConfig.slots.length}
@@ -409,7 +409,7 @@ export function FormSettingsModal({
               }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              <span>Danger Zone</span>
+              <span>Danger</span>
             </button>
           </div>
 
@@ -417,232 +417,276 @@ export function FormSettingsModal({
           <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
             {/* ─── TAB 1: FINAL SUBMISSION ─── */}
             {activeTab === "final_submission" && (
-              <div className="space-y-5 animate-in fade-in duration-150">
-                {/* Activation Banner */}
-                <div
-                  onClick={() => setFinalConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
-                  className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 cursor-pointer select-none ${
-                    finalConfig.enabled
-                      ? "bg-emerald-50/90 border-emerald-300 text-emerald-950 shadow-xs"
-                      : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100/80"
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                          finalConfig.enabled
-                            ? "bg-emerald-200 text-emerald-950 border border-emerald-300"
-                            : "bg-slate-200 text-slate-700"
-                        }`}
-                      >
-                        {finalConfig.enabled ? "Active Phase · Open to Students" : "Inactive Phase · Paused"}
-                      </span>
-                      <h4 className="text-sm font-extrabold">Final Deliverables Submission</h4>
+              <div className="space-y-4 animate-in fade-in duration-150">
+                {/* Status Banner */}
+                {finalConfig.enabled ? (
+                  <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 flex items-center justify-between gap-3 text-emerald-950">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
+                      <div>
+                        <h4 className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                          Final Submissions are Open
+                        </h4>
+                        <p className="text-[11px] text-emerald-700 mt-0.5">
+                          Students can now upload their completed deliverables on the portal.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      {finalConfig.enabled
-                        ? "Students can now upload final reports, GitHub repository links, slides, and demo recordings directly on the portal."
-                        : "Turn on this phase so students can submit their completed deliverables. Click anywhere here to activate."}
-                    </p>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                      Live
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => setFinalConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        finalConfig.enabled
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs"
-                          : "bg-slate-200 hover:bg-slate-300 text-slate-800"
-                      }`}
-                    >
-                      {finalConfig.enabled ? "Active (ON)" : "Turn ON"}
-                    </button>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={finalConfig.enabled}
-                        onChange={(e) =>
-                          setFinalConfig((prev) => ({ ...prev, enabled: e.target.checked }))
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                    </label>
+                ) : (
+                  <div className="p-3.5 rounded-2xl border border-blue-100 bg-blue-50/50 flex items-center gap-3 text-slate-700">
+                    <div className="w-8 h-8 rounded-xl bg-[#0D3481]/10 text-[#0D3481] flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">Open Final Submissions</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Set the submission deadline and required deliverables below to open final submissions for students.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Deadline & Settings */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
+                  {/* Deadline */}
+                  <div className="space-y-1">
                     <CustomDatePicker
-                      label="Final Submission Deadline"
+                      label="Submission Deadline"
                       value={finalConfig.deadline}
                       onChange={(val) =>
                         setFinalConfig((prev) => ({ ...prev, deadline: val }))
                       }
                       minDate={getTodayIso()}
-                      ruleBadge="Rule: Today or future"
+                      popoverPlacement="bottom"
                       presets={[
+                        { label: "+10 Days", daysFromBase: 10 },
                         { label: "+15 Days", daysFromBase: 15 },
                         { label: "+30 Days", daysFromBase: 30 },
-                        { label: "+45 Days", daysFromBase: 45 },
                       ]}
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  {/* Required Deliverables Selection */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 block">
+                        Deliverable Links
+                      </label>
+                      <span className="text-[10px] text-slate-400">
+                        Unchecked items remain optional for students
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* 1. Report */}
+                      <div
+                        onClick={() =>
+                          setFinalConfig((prev) => ({ ...prev, requireReport: !prev.requireReport }))
+                        }
+                        className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                          finalConfig.requireReport
+                            ? "border-[#0D3481] bg-[#0D3481]/5 shadow-2xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={finalConfig.requireReport}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFinalConfig((prev) => ({ ...prev, requireReport: e.target.checked }));
+                            }}
+                            className="w-4 h-4 rounded text-[#0D3481] focus:ring-[#0D3481] cursor-pointer"
+                          />
+                          <FileText className="w-4 h-4 text-red-500" />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">Report</span>
+                            <span className="text-[10px] text-slate-400 block">PDF format</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            finalConfig.requireReport
+                              ? "text-red-700 bg-red-50 border border-red-200/80"
+                              : "text-slate-500 bg-slate-100"
+                          }`}
+                        >
+                          {finalConfig.requireReport ? "Mandatory" : "Optional"}
+                        </span>
+                      </div>
+
+                      {/* 2. Git Repository */}
+                      <div
+                        onClick={() =>
+                          setFinalConfig((prev) => ({ ...prev, requireRepoUrl: !prev.requireRepoUrl }))
+                        }
+                        className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                          finalConfig.requireRepoUrl
+                            ? "border-[#0D3481] bg-[#0D3481]/5 shadow-2xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={finalConfig.requireRepoUrl}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFinalConfig((prev) => ({ ...prev, requireRepoUrl: e.target.checked }));
+                            }}
+                            className="w-4 h-4 rounded text-[#0D3481] focus:ring-[#0D3481] cursor-pointer"
+                          />
+                          <FolderGit2 className="w-4 h-4 text-slate-800" />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">Git Repository</span>
+                            <span className="text-[10px] text-slate-400 block">Repository link</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            finalConfig.requireRepoUrl
+                              ? "text-red-700 bg-red-50 border border-red-200/80"
+                              : "text-slate-500 bg-slate-100"
+                          }`}
+                        >
+                          {finalConfig.requireRepoUrl ? "Mandatory" : "Optional"}
+                        </span>
+                      </div>
+
+                      {/* 3. PPT */}
+                      <div
+                        onClick={() =>
+                          setFinalConfig((prev) => ({ ...prev, requireSlides: !prev.requireSlides }))
+                        }
+                        className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                          finalConfig.requireSlides
+                            ? "border-[#0D3481] bg-[#0D3481]/5 shadow-2xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={finalConfig.requireSlides}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFinalConfig((prev) => ({ ...prev, requireSlides: e.target.checked }));
+                            }}
+                            className="w-4 h-4 rounded text-[#0D3481] focus:ring-[#0D3481] cursor-pointer"
+                          />
+                          <Presentation className="w-4 h-4 text-amber-600" />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">PPT</span>
+                            <span className="text-[10px] text-slate-400 block">Presentation link</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            finalConfig.requireSlides
+                              ? "text-red-700 bg-red-50 border border-red-200/80"
+                              : "text-slate-500 bg-slate-100"
+                          }`}
+                        >
+                          {finalConfig.requireSlides ? "Mandatory" : "Optional"}
+                        </span>
+                      </div>
+
+                      {/* 4. Demo */}
+                      <div
+                        onClick={() =>
+                          setFinalConfig((prev) => ({ ...prev, requireDemoUrl: !prev.requireDemoUrl }))
+                        }
+                        className={`p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer select-none ${
+                          finalConfig.requireDemoUrl
+                            ? "border-[#0D3481] bg-[#0D3481]/5 shadow-2xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={finalConfig.requireDemoUrl}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setFinalConfig((prev) => ({ ...prev, requireDemoUrl: e.target.checked }));
+                            }}
+                            className="w-4 h-4 rounded text-[#0D3481] focus:ring-[#0D3481] cursor-pointer"
+                          />
+                          <Video className="w-4 h-4 text-blue-600" />
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 block">Demo</span>
+                            <span className="text-[10px] text-slate-400 block">Live URL</span>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            finalConfig.requireDemoUrl
+                              ? "text-red-700 bg-red-50 border border-red-200/80"
+                              : "text-slate-500 bg-slate-100"
+                          }`}
+                        >
+                          {finalConfig.requireDemoUrl ? "Mandatory" : "Optional"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Instructions Textarea */}
+                  <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-700 block">
-                      Max File Size (MB per document)
+                      Instructions
                     </label>
-                    <input
-                      type="number"
-                      min={5}
-                      max={100}
-                      value={finalConfig.maxFileSizeMb}
+                    <textarea
+                      rows={2}
+                      value={finalConfig.instructions}
                       onChange={(e) =>
-                        setFinalConfig((prev) => ({
-                          ...prev,
-                          maxFileSizeMb: Number(e.target.value) || 25,
-                        }))
+                        setFinalConfig((prev) => ({ ...prev, instructions: e.target.value }))
                       }
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481]"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] leading-relaxed resize-none"
+                      placeholder="Optional student instructions..."
                     />
                   </div>
-                </div>
 
-                {/* Required Components Checkboxes */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-700 block">
-                    Mandatory Deliverables Required from Students
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={finalConfig.requireReport}
-                        onChange={(e) =>
-                          setFinalConfig((prev) => ({ ...prev, requireReport: e.target.checked }))
-                        }
-                        className="rounded text-[#0D3481] focus:ring-[#0D3481]"
-                      />
-                      <FileText className="w-4 h-4 text-red-500" />
-                      <div>
-                        <span className="font-bold text-slate-800 block">Project Dossier / Report</span>
-                        <span className="text-[10px] text-slate-500">IEEE format PDF document</span>
-                      </div>
-                    </label>
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                    <div className="text-xs text-slate-500">
+                      {finalConfig.enabled ? (
+                        <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Open for student submissions
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">
+                          Configure deadline &amp; deliverables above
+                        </span>
+                      )}
+                    </div>
 
-                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={finalConfig.requireRepoUrl}
-                        onChange={(e) =>
-                          setFinalConfig((prev) => ({ ...prev, requireRepoUrl: e.target.checked }))
-                        }
-                        className="rounded text-[#0D3481] focus:ring-[#0D3481]"
-                      />
-                      <FolderGit2 className="w-4 h-4 text-slate-800" />
-                      <div>
-                        <span className="font-bold text-slate-800 block">Git Source Repository</span>
-                        <span className="text-[10px] text-slate-500">GitHub / GitLab repo link</span>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={finalConfig.requireSlides}
-                        onChange={(e) =>
-                          setFinalConfig((prev) => ({ ...prev, requireSlides: e.target.checked }))
-                        }
-                        className="rounded text-[#0D3481] focus:ring-[#0D3481]"
-                      />
-                      <Presentation className="w-4 h-4 text-amber-600" />
-                      <div>
-                        <span className="font-bold text-slate-800 block">Presentation Slides (PPT)</span>
-                        <span className="text-[10px] text-slate-500">PowerPoint / PDF slide deck</span>
-                      </div>
-                    </label>
-
-                    <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200/90 bg-slate-50/60 hover:bg-slate-50 cursor-pointer text-xs">
-                      <input
-                        type="checkbox"
-                        checked={finalConfig.requireDemoUrl}
-                        onChange={(e) =>
-                          setFinalConfig((prev) => ({ ...prev, requireDemoUrl: e.target.checked }))
-                        }
-                        className="rounded text-[#0D3481] focus:ring-[#0D3481]"
-                      />
-                      <Video className="w-4 h-4 text-blue-600" />
-                      <div>
-                        <span className="font-bold text-slate-800 block">Prototype / Live Demo URL</span>
-                        <span className="text-[10px] text-slate-500">Hosted URL or Drive video demo</span>
-                      </div>
-                    </label>
+                    <div>
+                      {!finalConfig.enabled ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveFinalSubmission({ ...finalConfig, enabled: true })}
+                          className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs hover:shadow-md flex items-center gap-2 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Open Final Submission</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveFinalSubmission()}
+                          className="px-5 py-2.5 rounded-xl bg-[#0B2545] hover:bg-[#071930] text-white text-xs font-bold transition-all shadow-xs hover:shadow-md flex items-center gap-2 cursor-pointer"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>Save Changes</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-
-                {/* Instructions Textarea */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
-                    Submission Instructions for Students
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={finalConfig.instructions}
-                    onChange={(e) =>
-                      setFinalConfig((prev) => ({ ...prev, instructions: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#0D3481]/20 focus:border-[#0D3481] leading-relaxed resize-none"
-                    placeholder="Instructions shown to students when uploading final submissions..."
-                  />
-                </div>
-
-                {/* Save Buttons */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                  <div className="text-xs text-slate-500 font-medium">
-                    {finalConfig.enabled ? (
-                      <span className="text-emerald-700 font-bold flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Final submission phase will be ACTIVE for students
-                      </span>
-                    ) : (
-                      <span className="text-slate-500 flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        Phase is currently PAUSED (inactive)
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    {!finalConfig.enabled && (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveFinalSubmission({ ...finalConfig, enabled: true })}
-                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                        title="Turn on phase and open to students immediately"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Activate &amp; Open to Students</span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => handleSaveFinalSubmission()}
-                      className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer flex items-center gap-2 ${
-                        finalConfig.enabled
-                          ? "bg-emerald-600 hover:bg-emerald-700"
-                          : "bg-[#0B2545] hover:bg-[#071930]"
-                      }`}
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>{finalConfig.enabled ? "Save &amp; Keep Active" : "Save Settings (Keep Paused)"}</span>
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -699,6 +743,7 @@ export function FormSettingsModal({
                       }
                       minDate={getTodayIso()}
                       ruleBadge="Rule: Today or future"
+                      popoverPlacement="bottom"
                       presets={[
                         { label: "Today", daysFromBase: 0 },
                         { label: "Tomorrow", daysFromBase: 1 },
