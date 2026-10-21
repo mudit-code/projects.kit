@@ -30,6 +30,7 @@ import { KitScreenLoader } from "@/components/KitScreenLoader";
 import { getActiveSession } from "@/lib/auth";
 import { EditProfileModal } from "@/components/dashboard/EditProfileModal";
 import { getCleanTrashForms } from "@/lib/trashForms";
+import { FacultyHodMobileApp } from "@/components/mobile/admin/FacultyHodMobileApp";
 
 export type RoleType = "HOD" | "COORDINATOR";
 
@@ -257,7 +258,14 @@ export function DashboardLayoutClient({
     : ROLE_PROFILES[currentRole].initial;
 
   return (
-    <div className="h-screen flex bg-slate-50 overflow-hidden relative">
+    <>
+      {/* ── Native Mobile App (< 768px): Faculty/HOD MobileShell ── */}
+      <div className="block md:hidden w-full h-[100dvh] overflow-hidden">
+        <FacultyHodMobileApp role={currentRole} />
+      </div>
+
+      {/* ── Desktop Dashboard Layout (≥ 768px) ── */}
+      <div className="hidden md:flex h-screen bg-slate-50 overflow-hidden relative w-full">
       {/* Mobile Backdrop Overlay */}
       {isMobileMenuOpen && (
         <div 
@@ -564,6 +572,7 @@ export function DashboardLayoutClient({
       />
 
 
-    </div>
+      </div>
+    </>
   );
 }

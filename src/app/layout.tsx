@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Suspense } from "react";
 import { PageLoadingProvider } from "@/components/PageLoadingProvider";
 import { SessionInactivityWatcher } from "@/components/SessionInactivityWatcher";
+import { PwaManager } from "@/components/mobile/pwa/PwaManager";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,9 +16,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F6F5F2" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B1120" },
+  ],
+  interactiveWidget: "resizes-content",
+};
+
 export const metadata: Metadata = {
   title: "projects.kit",
   description: "Next-generation college project lifecycle management: project registrations, guide allocations, sprint milestones, rubric evaluations, and certified dossiers.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "projects.kit",
+  },
   icons: {
     icon: [
       {
@@ -62,6 +81,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
         <Suspense fallback={null}>
           <PageLoadingProvider>
+            <PwaManager />
             <SessionInactivityWatcher />
             {children}
           </PageLoadingProvider>

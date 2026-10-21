@@ -93,6 +93,22 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.92 0.01 260);
   --sidebar-ring: oklch(0.60 0.18 265);
+
+  /* Mobile Experience Tokens (Native App Design Tokens) */
+  --mobile-navy: #0B2A6F;
+  --mobile-blue: #1C3A7F;
+  --mobile-link: #1D4ED8;
+  --mobile-amber: #F59E0B;
+  --mobile-bg: #F6F5F2;
+  --mobile-surface: #FFFFFF;
+  --mobile-text: #101828;
+  --mobile-muted: #475467;
+  --mobile-border: #E5E7EB;
+
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
 }
 
 .dark {
@@ -122,6 +138,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* Dark mode mobile equivalents */
+  --mobile-navy: #1C3A7F;
+  --mobile-blue: #3B82F6;
+  --mobile-link: #60A5FA;
+  --mobile-amber: #FBBF24;
+  --mobile-bg: #0B1120;
+  --mobile-surface: #1E293B;
+  --mobile-text: #F8FAFC;
+  --mobile-muted: #94A3B8;
+  --mobile-border: #334155;
 }
 
 @layer base {
@@ -130,5 +157,35 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* App-feel mobile utilities */
+@layer utilities {
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top, 0px), 12px);
+  }
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+  .safe-bottom-margin {
+    margin-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+  .mobile-chrome {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Ensure mobile native app feel */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents auto-zoom in iOS Safari */
+  }
+  .mobile-shell-root {
+    overscroll-behavior-y: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }

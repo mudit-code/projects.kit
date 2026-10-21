@@ -8,6 +8,7 @@ import { StreamBadge } from "@/components/StreamBadge";
 import { isStudentEligibleForForm } from "@/lib/formTargeting";
 import { RequestRecordModal } from "@/components/RequestRecordModal";
 import { PageIntroAnimation } from "@/components/PageIntroAnimation";
+import { StudentMobileApp } from "@/components/mobile/student/StudentMobileApp";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
@@ -1133,9 +1134,14 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
         />
       )}
 
-      {/* ── Page content — fades in as intro overlay dissolves ──────── */}
+      {/* ── Native Mobile Experience (< 768px): Dedicated MobileShell ── */}
+      <div className="block md:hidden w-full h-[100dvh] overflow-hidden">
+        <StudentMobileApp />
+      </div>
+
+      {/* ── Desktop Experience (≥ 768px): Desktop Shell ──────── */}
       <div
-        className={`bg-[#F6F5F2] flex flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"} w-full max-w-full overflow-x-hidden`}
+        className={`hidden md:flex bg-[#F6F5F2] flex-col ${step === "register" ? "h-screen overflow-hidden" : "min-h-screen"} w-full max-w-full overflow-x-hidden`}
         style={{
           opacity:    showIntro && !introRevealing ? 0 : 1,
           transition: introRevealing ? 'opacity 0.55s ease' : 'none',

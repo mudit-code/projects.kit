@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed brand blue background for maskable container -->
+  <rect width="512" height="512" fill="#0B2A6F"/>
+  
+  <!-- Centered White 'P' within the maskable safe zone (r=204px) -->
+  <g fill="#FFFFFF" transform="translate(146, 116)">
+    <path d="M 0 0 L 120 0 C 180 0 220 35 220 95 C 220 155 180 190 120 190 L 58 190 L 58 280 L 0 280 Z M 58 52 L 58 138 L 115 138 C 145 138 162 122 162 95 C 162 68 145 52 115 52 Z"/>
+  </g>
+</svg>
