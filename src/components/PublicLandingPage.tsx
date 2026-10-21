@@ -1136,7 +1136,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
       {/* ── Native Mobile Experience (< 768px): Dedicated MobileShell ── */}
       <div className="block md:hidden w-full h-[100dvh] overflow-hidden">
-        <StudentMobileApp />
+        <StudentMobileApp onAdminAccess={triggerHiddenLogin} />
       </div>
 
       {/* ── Desktop Experience (≥ 768px): Desktop Shell ──────── */}

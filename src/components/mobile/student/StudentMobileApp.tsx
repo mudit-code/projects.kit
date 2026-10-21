@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { LOGOS } from "@/lib/logos";
 import {
   FileText,
   FolderGit2,
@@ -32,7 +34,103 @@ import {
 import { StudentFormFocusFlow } from "./StudentFormFocusFlow";
 import { getSubmissionApprovalStatus } from "@/components/PublicLandingPage";
 
-export function StudentMobileApp() {
+export interface StudentMobileAppProps {
+  onAdminAccess?: () => void;
+}
+
+export function StudentMobileApp({ onAdminAccess }: StudentMobileAppProps = {}) {
+  const router = useRouter();
+
+  // Secret Admin Access via Long Press (Tap & Hold on Logo for 850ms)
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const didTriggerLongPress = useRef(false);
+  const [isHoldingLogo, setIsHoldingLogo] = useState(false);
+
+  const triggerHiddenLogin = useCallback(() => {
+    didTriggerLongPress.current = true;
+    setIsHoldingLogo(false);
+
+    try {
+      if (typeof window !== "undefined" && window.navigator && "vibrate" in window.navigator) {
+        window.navigator.vibrate([40, 30, 40]);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (onAdminAccess) {
+      onAdminAccess();
+    } else {
+      router.push("/admin");
+    }
+  }, [onAdminAccess, router]);
+
+  const handleLogoPointerDown = useCallback(
+    (e: React.TouchEvent | React.MouseEvent) => {
+      didTriggerLongPress.current = false;
+      let clientX = 0;
+      let clientY = 0;
+      if ("touches" in e && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ("clientX" in e) {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+      touchStartPos.current = { x: clientX, y: clientY };
+      setIsHoldingLogo(true);
+
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+      longPressTimer.current = setTimeout(() => {
+        triggerHiddenLogin();
+      }, 850);
+    },
+    [triggerHiddenLogin]
+  );
+
+  const handleLogoTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartPos.current || e.touches.length === 0) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const dy = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+    // If finger moves more than 10px, cancel long-press to allow scrolling
+    if (dx > 10 || dy > 10) {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      setIsHoldingLogo(false);
+      touchStartPos.current = null;
+    }
+  }, []);
+
+  const handleLogoPointerUp = useCallback((e?: React.SyntheticEvent) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    setIsHoldingLogo(false);
+    touchStartPos.current = null;
+
+    if (didTriggerLongPress.current) {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      setTimeout(() => {
+        didTriggerLongPress.current = false;
+      }, 350);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
+
   const [verifiedStudent, setVerifiedStudent] = useState<any | null>(null);
   const [afnInput, setAfnInput] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -265,17 +363,102 @@ export function StudentMobileApp() {
   if (!verifiedStudent) {
     return (
       <div className="mobile-shell-root flex flex-col justify-between min-h-[100dvh] bg-[#F6F5F2] dark:bg-slate-950 p-5 safe-top safe-bottom">
-        {/* Top Header */}
-        <div className="pt-8 text-center space-y-2">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#0B2A6F] text-white font-bold text-2xl flex items-center justify-center shadow-lg shadow-[#0B2A6F]/20">
-            P
+        {/* Top Minimal Bar with Institutional Logo (Tap & hold to enter staff gate) */}
+        <div className="w-full flex items-center justify-between pt-2 px-1">
+          <button
+            type="button"
+            onTouchStart={handleLogoPointerDown}
+            onTouchMove={handleLogoTouchMove}
+            onTouchEnd={handleLogoPointerUp}
+            onTouchCancel={handleLogoPointerUp}
+            onMouseDown={handleLogoPointerDown}
+            onMouseUp={handleLogoPointerUp}
+            onMouseLeave={handleLogoPointerUp}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+            className={`p-1 rounded-xl transition-all duration-200 cursor-pointer ${
+              isHoldingLogo ? "scale-95 ring-4 ring-[#0B2A6F]/30 bg-blue-50/80 rounded-xl" : "active:scale-95"
+            }`}
+            aria-label="Kanpur Institute of Technology"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOGOS.kit}
+              alt="Kanpur Institute of Technology"
+              className="h-7 w-auto max-w-[125px] object-contain pointer-events-none"
+              draggable={false}
+            />
+          </button>
+
+          <span className="text-[11px] font-semibold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+            Student Portal
+          </span>
+        </div>
+
+        {/* Hero Branding with Official projects.kit Geometric Logo (Tap & hold supported) */}
+        <div className="pt-2 sm:pt-4 text-center space-y-3">
+          <div
+            onTouchStart={handleLogoPointerDown}
+            onTouchMove={handleLogoTouchMove}
+            onTouchEnd={handleLogoPointerUp}
+            onTouchCancel={handleLogoPointerUp}
+            onMouseDown={handleLogoPointerDown}
+            onMouseUp={handleLogoPointerUp}
+            onMouseLeave={handleLogoPointerUp}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+            role="button"
+            tabIndex={0}
+            aria-label="projects.kit logo (Tap and hold for staff panel)"
+            className={`inline-flex items-center justify-center p-3 rounded-2xl transition-all duration-200 cursor-pointer select-none ${
+              isHoldingLogo
+                ? "scale-90 ring-4 ring-[#0B2A6F]/30 bg-blue-50/70 dark:bg-blue-950/40 shadow-lg animate-pulse"
+                : "active:scale-95 hover:scale-105"
+            }`}
+          >
+            {/* Official projects.kit SVG logo — exact brand asset */}
+            <svg
+              viewBox="0 0 1930 1930"
+              role="img"
+              aria-label="projects.kit logo"
+              className="h-14 sm:h-16 w-auto object-contain pointer-events-none"
+              style={{ WebkitTouchCallout: "none", userSelect: "none" }}
+            >
+              <defs>
+                <mask id="cut-mobile-student" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+                  <rect width="1930" height="1930" fill="#fff" />
+                  <g fill="none" stroke="#000" strokeWidth="105">
+                    <line x1="928" y1="585" x2="770" y2="1135" />
+                    <line x1="928" y1="585" x2="1345" y2="1005" />
+                    <line x1="770" y1="1135" x2="1345" y2="1005" />
+                    <line x1="770" y1="1135" x2="587" y2="1732" />
+                  </g>
+                  <g fill="#000">
+                    <circle cx="928" cy="585" r="165" />
+                    <circle cx="1345" cy="1005" r="165" />
+                    <circle cx="770" cy="1135" r="165" />
+                  </g>
+                </mask>
+              </defs>
+              <polygon
+                points="965,413.5 1516.5,965 965,1516.5 413.5,965"
+                fill="#1C3A7F"
+                stroke="#1C3A7F"
+                strokeWidth="600"
+                strokeLinejoin="round"
+                mask="url(#cut-mobile-student)"
+              />
+            </svg>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            projects.kit
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-            Academic Project Lifecycle & Evaluation Portal
-          </p>
+
+          <div>
+            <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              projects<span className="text-[#0B2A6F] dark:text-blue-400">.kit</span>
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
+              Academic Project Lifecycle & Evaluation Portal
+            </p>
+          </div>
         </div>
 
         {/* Verification Card */}
@@ -596,6 +779,37 @@ export function StudentMobileApp() {
               <LogOut className="w-4 h-4 text-slate-400" />
               <span>Switch Student (Change AFN)</span>
             </button>
+
+            {/* Institutional Brand footer with Tap and Hold */}
+            <div className="pt-4 text-center space-y-2">
+              <button
+                type="button"
+                onTouchStart={handleLogoPointerDown}
+                onTouchMove={handleLogoTouchMove}
+                onTouchEnd={handleLogoPointerUp}
+                onTouchCancel={handleLogoPointerUp}
+                onMouseDown={handleLogoPointerDown}
+                onMouseUp={handleLogoPointerUp}
+                onMouseLeave={handleLogoPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}
+                className={`inline-flex items-center gap-2 p-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                  isHoldingLogo ? "scale-95 ring-4 ring-[#0B2A6F]/30 bg-blue-50 dark:bg-blue-950/40" : "active:scale-95"
+                }`}
+                aria-label="KIT Logo (Tap and hold for staff access)"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={LOGOS.kit}
+                  alt="Kanpur Institute of Technology"
+                  className="h-6 w-auto object-contain pointer-events-none"
+                  draggable={false}
+                />
+              </button>
+              <p className="text-[11px] text-slate-400">
+                Kanpur Institute of Technology • Academic Project Lifecycle
+              </p>
+            </div>
           </div>
         )}
       </PullToRefresh>
