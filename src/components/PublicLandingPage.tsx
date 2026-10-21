@@ -312,7 +312,6 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
   // Hidden Admin Access State
   const [isHoldingLogo, setIsHoldingLogo] = useState(false);
-  const [sessionTimeoutNotice, setSessionTimeoutNotice] = useState(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didTriggerLongPress = useRef(false);
@@ -385,16 +384,19 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       })
       .catch(() => {});
 
-    // Check if redirected due to session inactivity timeout
+    // If arrived with session_expired query parameter, redirect to hidden login panel
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("session_expired") === "1" || params.get("session_expired") === "true") {
-        setSessionTimeoutNotice(true);
+        router.replace("/admin?session_expired=1");
+        return;
       }
     }
 
     const syncSession = () => setActiveSession(getActiveSession());
-    const handleTimeout = () => setSessionTimeoutNotice(true);
+    const handleTimeout = () => {
+      router.replace("/admin?session_expired=1");
+    };
     const syncInitiatives = () => {
       fetch("/api/forms")
         .then((res) => res.json())
@@ -424,17 +426,7 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
       window.removeEventListener("kit-initiatives-change", syncInitiatives);
       window.removeEventListener("storage", syncSession);
     };
-  }, []);
-
-  const dismissSessionTimeoutNotice = () => {
-    setSessionTimeoutNotice(false);
-    if (typeof window !== "undefined" && window.history && window.location.search.includes("session_expired")) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("session_expired");
-      const clean = url.pathname + (url.search ? url.search : "");
-      window.history.replaceState({}, "", clean);
-    }
-  };
+  }, [router]);
 
   // Focus AFN input on mount
   useEffect(() => {
@@ -1201,35 +1193,6 @@ export function PublicLandingPage({ onAdminAccess }: PublicLandingPageProps) {
 
       {/* Header spacer to prevent content from slipping under fixed header */}
       <div className="h-16 shrink-0 w-full" aria-hidden="true" />
-
-      {/* ─── Session Inactivity Timeout Banner ─── */}
-      {sessionTimeoutNotice && (
-        <div className="w-full bg-amber-500/10 border-b border-amber-500/20 px-4 py-3 text-amber-900 flex items-center justify-between gap-3 text-xs sm:text-sm animate-in fade-in slide-in-from-top-2 duration-200 z-20">
-          <div className="flex items-center gap-2.5 max-w-2xl mx-auto">
-            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              <strong>Session Expired:</strong> You were automatically signed out after 20 minutes of inactivity.
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => router.push("/admin")}
-              className="px-3 py-1 bg-[#0D3481] hover:bg-[#0A2761] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              Sign In Again
-            </button>
-            <button
-              type="button"
-              onClick={dismissSessionTimeoutNotice}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
-              aria-label="Dismiss notice"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ─── Main Content ─── */}
       <main className={`flex-1 flex items-center justify-center px-4 w-full max-w-full ${step === "register" ? "py-2 sm:py-3 overflow-hidden min-h-0" : "py-6 sm:py-12"}`}>

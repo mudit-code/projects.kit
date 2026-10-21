@@ -11,6 +11,7 @@ import {
   EyeOff,
   CheckCircle2,
   ArrowLeft,
+  X,
 } from "lucide-react";
 import {
   RoleType,
@@ -22,7 +23,7 @@ import {
   UserSession,
 } from "@/lib/auth";
 import { RoleSelector } from "@/components/RoleSelector";
-import { LOGOS } from "@/lib/logos";
+import { Logo } from "@/components/Logo";
 
 interface AdminPortalPageClientProps {
   onLoginSuccess?: (role: RoleType) => void;
@@ -41,6 +42,7 @@ export function AdminPortalPageClient({ onLoginSuccess }: AdminPortalPageClientP
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -50,7 +52,22 @@ export function AdminPortalPageClient({ onLoginSuccess }: AdminPortalPageClientP
       setRole(session.role);
       setEmail(session.email || ROLE_DATA[session.role].email);
     }
-  }, []);
+
+    const expired = searchParams.get("session_expired");
+    if (expired === "1" || expired === "true") {
+      setSessionExpiredNotice(true);
+    }
+  }, [searchParams]);
+
+  const dismissExpiredNotice = () => {
+    setSessionExpiredNotice(false);
+    if (typeof window !== "undefined" && window.history && window.location.search.includes("session_expired")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("session_expired");
+      const clean = url.pathname + (url.search ? url.search : "");
+      window.history.replaceState({}, "", clean);
+    }
+  };
 
   const handleRoleChange = (newRole: RoleType) => {
     setRole(newRole);
@@ -129,24 +146,34 @@ export function AdminPortalPageClient({ onLoginSuccess }: AdminPortalPageClientP
             <span>Back</span>
           </Link>
 
-          {/* Header with KIT Logo */}
+          {/* Header with New Logo */}
           <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
-            <div className="h-10 max-w-[170px] flex items-center justify-center mb-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={LOGOS.kit}
-                alt="KIT Logo"
-                className="max-h-full w-auto object-contain"
-              />
+            <div className="flex items-center justify-center mb-2.5">
+              <Logo href="/" size="lg" />
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-extrabold text-[#10334A] tracking-tight">
-              Hidden Login Panel
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xs">
+            <p className="text-xs sm:text-sm text-slate-500 max-w-xs">
               Authorized sign-in for Head of Department (HOD) and Faculty Coordinators
             </p>
           </div>
+
+          {/* Session Expired Notice */}
+          {sessionExpiredNotice && (
+            <div className="mt-4 px-3.5 py-2.5 bg-neutral-100 border border-neutral-200/90 rounded-xl text-xs font-medium text-neutral-600 flex items-center justify-between animate-in fade-in duration-150">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
+                <span className="tracking-tight">Session expired</span>
+              </div>
+              <button
+                type="button"
+                onClick={dismissExpiredNotice}
+                className="text-neutral-400 hover:text-neutral-700 p-0.5 rounded cursor-pointer transition-colors"
+                aria-label="Dismiss notice"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Active Session Notice (if already signed in) */}
           {existingSession && (

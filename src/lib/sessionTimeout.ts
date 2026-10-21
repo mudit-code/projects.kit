@@ -8,17 +8,35 @@
 
 import { clearActiveSession, getActiveSession } from "./auth";
 
-/** 20 minutes in milliseconds (20 * 60 * 1000) */
+/** 20 minutes in milliseconds (20 * 60 * 1000) - Total session inactivity limit */
 export const SESSION_INACTIVITY_TIMEOUT_MS = 20 * 60 * 1000;
 
-/** 60 seconds warning before timeout */
-export const SESSION_WARNING_BEFORE_MS = 60 * 1000;
+/** 5 minutes of inactivity before the pop-up warning appears (5 * 60 * 1000) */
+export const SESSION_POPUP_INACTIVITY_MS = 5 * 60 * 1000;
+
+/** 15 minutes countdown remaining before the 20-minute timeout (20 - 5 = 15 mins) */
+export const SESSION_WARNING_BEFORE_MS = SESSION_INACTIVITY_TIMEOUT_MS - SESSION_POPUP_INACTIVITY_MS;
 
 /** LocalStorage key for cross-tab activity synchronization */
 export const LAST_ACTIVITY_KEY = "kit_last_activity_time";
 
 /** LocalStorage key for session timeout flag */
 export const SESSION_TIMED_OUT_KEY = "kit_session_timed_out";
+
+/**
+ * Check if inactivity has reached the 5-minute threshold to trigger the pop-up warning.
+ */
+export function shouldShowInactivityWarning(thresholdMs: number = SESSION_POPUP_INACTIVITY_MS): boolean {
+  return getInactivityElapsedMs() >= thresholdMs && !isSessionExpired();
+}
+
+/**
+ * Calculate the remaining milliseconds before the 20-minute session expires.
+ */
+export function getRemainingSessionMs(timeoutMs: number = SESSION_INACTIVITY_TIMEOUT_MS): number {
+  const elapsed = getInactivityElapsedMs();
+  return Math.max(0, timeoutMs - elapsed);
+}
 
 /**
  * Record user activity timestamp.
@@ -74,9 +92,9 @@ export function isSessionExpired(timeoutMs: number = SESSION_INACTIVITY_TIMEOUT_
 }
 
 /**
- * Terminate active logged-in session due to inactivity and redirect to landing page.
+ * Terminate active logged-in session due to inactivity and redirect to hidden login panel.
  */
-export function performInactivityLogout(redirectPath: string = "/?session_expired=1"): void {
+export function performInactivityLogout(redirectPath: string = "/admin?session_expired=1"): void {
   if (typeof window === "undefined") return;
 
   clearLastActivityTime();
@@ -92,16 +110,15 @@ export function performInactivityLogout(redirectPath: string = "/?session_expire
       new CustomEvent("kit-session-timeout", {
         detail: {
           reason: "inactivity_timeout",
-          timeoutMinutes: 20,
         },
       })
     );
   } catch {}
 
-  // Redirect to landing page
+  // Redirect to hidden login panel
   if (typeof window !== "undefined" && window.location) {
-    if (window.location.pathname === "/" && window.location.search.includes("session_expired=1")) {
-      // Already on landing page with flag
+    if (window.location.pathname === "/admin" && window.location.search.includes("session_expired=1")) {
+      // Already on admin login panel with flag
       return;
     }
     window.location.href = redirectPath;

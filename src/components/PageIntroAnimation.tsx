@@ -198,11 +198,20 @@ export function PageIntroAnimation({
         .pki-c  { display:inline-block; animation:pki-er .18s ease-in var(--d) forwards; }
         .pki-pp {
           display:inline-grid; align-items:baseline; justify-items:start;
+          transform-origin: center center;
+          will-change: transform, opacity, color;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          transform-style: preserve-3d;
           animation:
-            pki-ptilt .45s cubic-bezier(.65,0,.35,1) 2.85s forwards,
-            pki-pmove .7s  cubic-bezier(.65,0,.35,1) 3.3s  forwards,
+            pki-pflight 1.15s cubic-bezier(.4, 0, .2, 1) 2.85s forwards,
             pki-pcol  .4s  ease 3.5s forwards,
             pki-pfade .7s  ease 4s   forwards;
+        }
+        .pki-pp * {
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          will-change: transform, opacity;
         }
         .pki-gl { grid-area:1/1; animation:pki-out .25s ease 2.55s forwards; }
         .pki-gu { grid-area:1/1; opacity:0; animation:pki-gin .3s cubic-bezier(.22,1,.36,1) 2.55s forwards; }
@@ -236,12 +245,17 @@ export function PageIntroAnimation({
         .pki-flying { display:none; z-index:100000; pointer-events:none; }
         .pki-flying svg { display:block; width:100%; height:100%; }
 
-        @keyframes pki-rise  { from{opacity:0;transform:translate3d(0,12px,0)} to{opacity:1;transform:translate3d(0,0,0)} }
-        @keyframes pki-er    { from{opacity:1;transform:translate3d(0,0,0)} to{opacity:0;transform:translate3d(-6px,0,0)} }
-        @keyframes pki-out   { from{opacity:1} to{opacity:0} }
-        @keyframes pki-gin   { from{opacity:0;transform:scale(.9)} to{opacity:1;transform:scale(1)} }
-        @keyframes pki-ptilt { from{transform:translate3d(0,0,0) rotate(0deg) scale(1)} to{transform:translate3d(0,0,0) rotate(16deg) scale(1)} }
-        @keyframes pki-pmove { from{transform:translate3d(0,0,0) rotate(16deg) scale(1)} to{transform:translate3d(var(--dx,0px),var(--dy,0px),0) rotate(16deg) scale(var(--s,2))} }
+        @keyframes pki-rise    { from{opacity:0;transform:translate3d(0,12px,0)} to{opacity:1;transform:translate3d(0,0,0)} }
+        @keyframes pki-er      { from{opacity:1;transform:translate3d(0,0,0)} to{opacity:0;transform:translate3d(-6px,0,0)} }
+        @keyframes pki-out     { from{opacity:1} to{opacity:0} }
+        @keyframes pki-gin     { from{opacity:0;transform:scale(.9)} to{opacity:1;transform:scale(1)} }
+        @keyframes pki-pflight {
+          0%   { transform:translate3d(0,0,0) rotate(0deg) scale(1); }
+          35%  { transform:translate3d(0,0,0) rotate(16deg) scale(1); }
+          100% { transform:translate3d(var(--dx,0px),var(--dy,0px),0) rotate(16deg) scale(var(--s,2)); }
+        }
+        @keyframes pki-ptilt   { from{transform:translate3d(0,0,0) rotate(0deg) scale(1)} to{transform:translate3d(0,0,0) rotate(16deg) scale(1)} }
+        @keyframes pki-pmove   { from{transform:translate3d(0,0,0) rotate(16deg) scale(1)} to{transform:translate3d(var(--dx,0px),var(--dy,0px),0) rotate(16deg) scale(var(--s,2))} }
         @keyframes pki-pcol  { from{color:#0B2A6F} to{color:#F6F5F2} }
         @keyframes pki-pfade { from{opacity:1} to{opacity:0} }
         @keyframes pki-dotin { to{transform:rotate(45deg) scale(1)} }

@@ -233,10 +233,19 @@ export function KitScreenLoader({
           display: inline-grid;
           align-items: baseline;
           justify-items: start;
-          animation: ptilt .45s cubic-bezier(.65, 0, .35, 1) 2.85s forwards,
-                     pmove .7s cubic-bezier(.65, 0, .35, 1) 3.3s forwards,
+          transform-origin: center center;
+          will-change: transform, opacity, color;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          transform-style: preserve-3d;
+          animation: pflight 1.15s cubic-bezier(.4, 0, .2, 1) 2.85s forwards,
                      pcol .4s ease 3.5s forwards,
                      pfade .7s ease 4s forwards;
+        }
+        .pp * {
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+          will-change: transform, opacity;
         }
         .gl { grid-area: 1/1; animation: out .25s ease 2.55s forwards; }
         .gu { grid-area: 1/1; opacity: 0; animation: gin .3s cubic-bezier(.22, 1, .36, 1) 2.55s forwards; }
@@ -259,7 +268,7 @@ export function KitScreenLoader({
           height: ${isHeartbeatOnly ? heartbeatLogoSize : 'min(46vw, 200px)'};
           opacity: 0;
           transform: scale(.2) rotate(-90deg);
-          animation: pop .8s cubic-bezier(.2, 1.3, .3, 1) 2.9s forwards, lbeat .9s ease-out 3.95s;
+          animation: pop .8s cubic-bezier(.2, 1.3, .3, 1) 2.9s forwards, lbeat .9s ease-out 4.15s;
         }
         .stage svg { display: block; width: 100%; height: 100%; }
         .ed { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw .5s ease-out forwards; }
@@ -293,6 +302,11 @@ export function KitScreenLoader({
         @keyframes er { from { opacity: 1; transform: translate3d(0, 0, 0); } to { opacity: 0; transform: translate3d(-6px, 0, 0); } }
         @keyframes out { from { opacity: 1; } to { opacity: 0; } }
         @keyframes gin { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes pflight {
+          0%   { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+          35%  { transform: translate3d(0, 0, 0) rotate(16deg) scale(1); }
+          100% { transform: translate3d(var(--dx, 0px), var(--dy, 0px), 0) rotate(16deg) scale(var(--s, 2)); }
+        }
         @keyframes ptilt { from { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); } to { transform: translate3d(0, 0, 0) rotate(16deg) scale(1); } }
         @keyframes pmove { from { transform: translate3d(0, 0, 0) rotate(16deg) scale(1); } to { transform: translate3d(var(--dx, 0px), var(--dy, 0px), 0) rotate(16deg) scale(var(--s, 2)); } }
         @keyframes pcol { from { color: var(--ink); } to { color: var(--bg); } }

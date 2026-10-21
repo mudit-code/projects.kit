@@ -15,18 +15,20 @@ import {
 } from "lucide-react";
 import { RoleType, ROLE_DATA, saveActiveSession, getRoleHomeRoute } from "@/lib/auth";
 import { RoleSelector } from "@/components/RoleSelector";
-import { LOGOS } from "@/lib/logos";
+import { Logo } from "@/components/Logo";
 
 interface HiddenLoginPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess?: (role: RoleType) => void;
+  sessionExpired?: boolean;
 }
 
 export function HiddenLoginPanel({
   isOpen,
   onClose,
   onLoginSuccess,
+  sessionExpired = false,
 }: HiddenLoginPanelProps) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -131,27 +133,27 @@ export function HiddenLoginPanel({
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header with Institution Logo */}
+        {/* Header with New Logo */}
         <div className="flex flex-col items-center text-center pb-5 border-b border-slate-100">
-          <div className="h-10 max-w-[170px] flex items-center justify-center mb-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOGOS.kit}
-              alt="KIT Logo"
-              className="max-h-full w-auto object-contain"
-            />
+          <div className="flex items-center justify-center mb-2.5">
+            <Logo href="/" size="lg" />
           </div>
 
-          <h2
+          <p
             id="hidden-login-title"
-            className="text-xl sm:text-2xl font-extrabold text-[#10334A] tracking-tight"
+            className="text-xs sm:text-sm text-slate-500 max-w-xs"
           >
-            Hidden Login Panel
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-xs">
             Authorized sign-in for Head of Department (HOD) and Faculty Coordinators
           </p>
         </div>
+
+        {/* Session Expired Notice */}
+        {sessionExpired && (
+          <div className="mt-4 px-3.5 py-2.5 bg-neutral-100 border border-neutral-200/90 rounded-xl text-xs font-medium text-neutral-600 flex items-center gap-2 animate-in fade-in duration-150">
+            <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
+            <span className="tracking-tight">Session expired</span>
+          </div>
+        )}
 
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold">

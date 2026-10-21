@@ -82,8 +82,8 @@ describe("Hidden Login Panel & Session Inactivity Suite", () => {
     vi.spyOn(Date, "now").mockReturnValue(startTime + 20 * 60 * 1000);
     expect(isSessionExpired()).toBe(true);
 
-    performInactivityLogout("/?session_expired=1");
-    expect(window.location.href).toBe("/?session_expired=1");
+    performInactivityLogout();
+    expect(window.location.href).toBe("/admin?session_expired=1");
     expect(mockStorage[LAST_ACTIVITY_KEY]).toBeUndefined();
   });
 });

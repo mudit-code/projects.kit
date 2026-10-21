@@ -1,31 +1,51 @@
-"use client";
-
+import React, { useId } from "react";
 import Link from "next/link";
 
 export function Logo({ 
   className = "", 
   collapsed = false,
+  size = "md",
   href,
   onClick,
 }: { 
   className?: string; 
   collapsed?: boolean;
+  size?: "sm" | "md" | "lg" | "xl";
   href?: string;
   onClick?: () => void;
 }) {
+  const maskId = useId();
+
+  const iconSizes = {
+    sm: "w-7 h-7",
+    md: "w-8 h-8",
+    lg: "w-10 h-10",
+    xl: "w-12 h-12",
+  };
+
+  const textSizes = {
+    sm: "text-sm",
+    md: "text-base",
+    lg: "text-xl",
+    xl: "text-2xl",
+  };
+
+  const iconClass = iconSizes[size] || iconSizes.md;
+  const textClass = textSizes[size] || textSizes.md;
+
   const content = (
     <div className={`flex items-center group transition-all select-none ${collapsed ? "justify-center" : "gap-2.5"} ${className}`}>
       {collapsed ? (
-        <div className="relative w-9 h-9 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shrink-0" title="projects.kit">
+        <div className={`relative ${iconClass} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shrink-0`} title="projects.kit">
           <svg
             viewBox="0 0 1930 1930"
             role="img"
             aria-label="projects.kit logo"
-            className="w-8 h-8 object-contain shrink-0"
+            className={`${iconClass} object-contain shrink-0`}
             style={{ pointerEvents: "none", userSelect: "none" }}
           >
             <defs>
-              <mask id="cut-sidebar-logo-c" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+              <mask id={`cut-logo-c-${maskId}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
                 <rect width="1930" height="1930" fill="#fff" />
                 <g fill="none" stroke="#000" strokeWidth="105">
                   <line x1="928" y1="585" x2="770" y2="1135" />
@@ -46,22 +66,22 @@ export function Logo({
               stroke="#1C3A7F"
               strokeWidth="600"
               strokeLinejoin="round"
-              mask="url(#cut-sidebar-logo-c)"
+              mask={`url(#cut-logo-c-${maskId})`}
             />
           </svg>
         </div>
       ) : (
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="relative h-8 w-8 flex items-center shrink-0 group-hover:scale-105 transition-transform">
+          <div className={`relative ${iconClass} flex items-center shrink-0 group-hover:scale-105 transition-transform`}>
             <svg
               viewBox="0 0 1930 1930"
               role="img"
               aria-label="projects.kit logo"
-              className="w-8 h-8 object-contain shrink-0"
+              className={`${iconClass} object-contain shrink-0`}
               style={{ pointerEvents: "none", userSelect: "none" }}
             >
               <defs>
-                <mask id="cut-sidebar-logo" maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
+                <mask id={`cut-logo-${maskId}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1930" height="1930">
                   <rect width="1930" height="1930" fill="#fff" />
                   <g fill="none" stroke="#000" strokeWidth="105">
                     <line x1="928" y1="585" x2="770" y2="1135" />
@@ -82,11 +102,11 @@ export function Logo({
                 stroke="#1C3A7F"
                 strokeWidth="600"
                 strokeLinejoin="round"
-                mask="url(#cut-sidebar-logo)"
+                mask={`url(#cut-logo-${maskId})`}
               />
             </svg>
           </div>
-          <span className="text-base font-extrabold tracking-tight text-[#10334A] whitespace-nowrap">
+          <span className={`${textClass} font-extrabold tracking-tight text-[#10334A] whitespace-nowrap`}>
             projects<span className="text-[#0D3481]">.kit</span>
           </span>
         </div>
