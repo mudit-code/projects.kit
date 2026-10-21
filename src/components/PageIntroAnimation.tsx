@@ -183,17 +183,29 @@ export function PageIntroAnimation({
       flyTimer = setTimeout(startFlyTransition, LOGO_CONSTRUCT_MS);
     };
 
+    // Safety watchdog: guarantees page content reveals even if fonts/timers ever stutter
+    const watchdogTimer = setTimeout(() => {
+      onStartReveal();
+      setTimeout(() => {
+        setPhase('done');
+        onComplete();
+      }, 350);
+    }, LOGO_CONSTRUCT_MS + FLY_DURATION_MS + 600);
+
     if (typeof document !== 'undefined' && document.fonts?.ready) {
       Promise.race([
         document.fonts.ready,
-        new Promise<void>((res) => setTimeout(res, 800)),
+        new Promise<void>((res) => setTimeout(res, 400)),
       ]).then(startAnimation);
     } else {
       startAnimation();
     }
 
-    return () => clearTimeout(flyTimer);
-  }, [prep, startFlyTransition]);
+    return () => {
+      clearTimeout(flyTimer);
+      clearTimeout(watchdogTimer);
+    };
+  }, [prep, startFlyTransition, onStartReveal, onComplete]);
 
   if (phase === 'done') return null;
 

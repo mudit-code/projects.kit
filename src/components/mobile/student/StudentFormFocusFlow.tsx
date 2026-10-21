@@ -237,22 +237,39 @@ export function StudentFormFocusFlow({
     }
   };
 
-  return (
-    <div className="flex flex-col min-h-[100dvh] bg-[#F6F5F2] dark:bg-slate-950 pb-28">
-      {/* Top App Bar with back button (NO SLOPPY BREADCRUMBS) */}
-      <MobileAppBar
-        title={form.subjectCode || "Registration"}
-        subtitle={form.title}
-        onBack={handlePrev}
-      />
+  // Smooth auto-scroll focused input into center of scrollable form viewport
+  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const target = e.target;
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 200);
+  };
 
-      {/* Stepper progress */}
-      <div className="bg-white dark:bg-slate-900 border-b border-neutral-200/80 dark:border-slate-800">
-        <Stepper steps={steps} currentStepIndex={currentStep} />
+  return (
+    <div className="relative flex flex-col w-full h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#F6F5F2] dark:bg-slate-950">
+      {/* Fixed Top Header + Stepper */}
+      <div className="shrink-0 z-30">
+        <MobileAppBar
+          title={form.subjectCode || "Registration"}
+          subtitle={form.title}
+          onBack={handlePrev}
+          showFullscreenToggle
+        />
+
+        {/* Stepper progress */}
+        <div className="bg-white dark:bg-slate-900 border-b border-neutral-200/80 dark:border-slate-800">
+          <Stepper steps={steps} currentStepIndex={currentStep} />
+        </div>
       </div>
 
-      {/* Scrollable Form Content */}
-      <div className="p-4 space-y-4 max-w-md mx-auto w-full">
+      {/* Scrollable Form Content ONLY — smoothly navigate through input boxes */}
+      <div
+        className="flex-1 overflow-y-auto overscroll-contain min-h-0 p-4 space-y-4 max-w-md mx-auto w-full pb-44"
+        style={{
+          WebkitOverflowScrolling: "touch",
+          touchAction: "pan-y",
+        }}
+      >
         {/* Error notification banner */}
         {errorMessage && (
           <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
@@ -341,6 +358,7 @@ export function StudentFormFocusFlow({
                 type="text"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
+                onFocus={handleInputFocus}
                 placeholder="e.g. Smart IoT Grid Monitoring"
                 className="w-full h-11 px-3.5 rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-[16px] sm:text-sm text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#0B2A6F]/20 focus:border-[#0B2A6F]"
               />
@@ -357,6 +375,7 @@ export function StudentFormFocusFlow({
                 maxLength={10}
                 value={whatsapp}
                 onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ""))}
+                onFocus={handleInputFocus}
                 placeholder="10-digit mobile number"
                 className="w-full h-11 px-3.5 rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-[16px] sm:text-sm font-mono text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#0B2A6F]/20 focus:border-[#0B2A6F]"
               />
@@ -371,6 +390,7 @@ export function StudentFormFocusFlow({
                 rows={3}
                 value={projectDescription}
                 onChange={(e) => setProjectDescription(e.target.value)}
+                onFocus={handleInputFocus}
                 placeholder="Describe your project idea and main problem solved..."
                 className="w-full p-3.5 rounded-xl border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-[16px] sm:text-sm text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-[#0B2A6F]/20 focus:border-[#0B2A6F] resize-none"
               />
@@ -449,6 +469,7 @@ export function StudentFormFocusFlow({
                           setTeamMembers(updated);
                         }}
                         onBlur={(e) => handleAfnBlur(idx, e.target.value)}
+                        onFocus={handleInputFocus}
                         className="w-full h-10 px-3 rounded-lg border border-neutral-200 dark:border-slate-700 bg-neutral-50 dark:bg-slate-800 text-[16px] sm:text-xs font-mono text-slate-900 dark:text-white"
                       />
                       {mem.name && (

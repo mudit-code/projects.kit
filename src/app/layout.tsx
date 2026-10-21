@@ -31,11 +31,16 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "projects.kit",
-  description: "Next-generation college project lifecycle management: project registrations, guide allocations, sprint milestones, rubric evaluations, and certified dossiers.",
+  description: "Academic Project Lifecycle & Evaluation Portal",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "projects.kit",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-touch-fullscreen": "yes",
   },
   icons: {
     icon: [
